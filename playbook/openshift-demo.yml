@@ -1,0 +1,26 @@
+---
+- name: OpenShift AAP Demo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Check OpenShift authentication
+      ansible.builtin.command:
+        cmd: oc whoami
+      register: oc_user
+      changed_when: false
+
+    - name: Display OpenShift user
+      ansible.builtin.debug:
+        msg: "Authenticated as: {{ oc_user.stdout }}"
+
+    - name: Check OpenShift cluster
+      ansible.builtin.command:
+        cmd: oc whoami --show-server
+      register: oc_server
+      changed_when: false
+
+    - name: Display OpenShift API
+      ansible.builtin.debug:
+        msg: "OpenShift API: {{ oc_server.stdout }}"
