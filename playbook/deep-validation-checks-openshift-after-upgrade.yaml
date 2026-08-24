@@ -24,6 +24,24 @@
           ============================================================
           VALIDATION STARTED
           ============================================================
+          
+    - name: Stream real AAP Ansible stdout to Bastion
+      ansible.builtin.shell: |
+        (
+          while true; do
+            for f in /runner/artifacts/*/stdout; do
+              if [ -f "$f" ]; then
+                tail -n +1 -f "$f" >> "{{ validation_log }}" 2>/dev/null
+                exit 0
+              fi
+            done
+            sleep 1
+          done
+        ) &
+      args:
+        executable: /bin/bash
+      delegate_to: localhost
+      changed_when: false
 
     - name: Display log location
       ansible.builtin.debug:
