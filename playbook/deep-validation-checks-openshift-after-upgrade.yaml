@@ -318,7 +318,11 @@
         that:
           - unhealthy_pods | length == 0
           - container_unhealthy_pods | length == 0
-        fail_msg: "Pod validation FAILED. Unhealthy pod(s) found."
+        fail_msg: >-
+          Pod validation FAILED.
+          Unhealthy pods: {{ unhealthy_pods | join(', ') if unhealthy_pods | length > 0 else 'None' }}.
+          Pods with unready containers: {{ container_unhealthy_pods | join(', ') if container_unhealthy_pods | length > 0 else 'None' }}.
+        success_msg: "Pod validation PASSED. All current pods are healthy."
 
     - name: Log Pod validation
       ansible.builtin.shell:
