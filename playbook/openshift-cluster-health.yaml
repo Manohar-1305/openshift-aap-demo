@@ -4,6 +4,9 @@
   connection: local
   gather_facts: false
 
+  vars:
+    validation_log: /tmp/openshift-post-upgrade-validation.log
+
   tasks:
 
     - name: Login to OpenShift
@@ -105,7 +108,41 @@
       loop_control:
         label: "{{ item.metadata.name }}"
 
-    - name: Display Post-Upgrade Validation Summary
+    - name: Build validation log
+      ansible.builtin.copy:
+        dest: "{{ validation_log }}"
+        mode: "0644"
+        content: |
+          ==============================================
+             OPENSHIFT POST-UPGRADE VALIDATION
+          ==============================================
+
+          Cluster Version:
+          {{ (cluster_version.stdout | from_json).status.desired.version }}
+
+          ClusterVersion: PASSED
+
+          Cluster Operators: PASSED
+
+          Nodes: PASSED
+
+          ==============================================
+             CLUSTER OPERATORS
+          ==============================================
+
+          {{ operators_summary.stdout }}
+
+          ==============================================
+             NODES
+          ==============================================
+
+          {{ nodes_summary.stdout }}
+
+          ==============================================
+             POST-UPGRADE VALIDATION PASSED
+          ==============================================
+
+    - name: Display validation summary
       ansible.builtin.debug:
         msg:
           - "=============================================="
@@ -115,14 +152,30 @@
           - "ClusterVersion: PASSED"
           - "Cluster Operators: PASSED"
           - "Nodes: PASSED"
-          - "=============================================="
-          - "        POST-UPGRADE VALIDATION PASSED"
+          - "Log created: {{ validation_log }}"
           - "=============================================="
 
-    - name: Display Cluster Operators
-      ansible.builtin.debug:
-        msg: "{{ operators_summary.stdout_lines }}"
+- name: Save Validation Log on Bastion
+  hosts: bastion
+  gather_facts: false
+  become: true
 
-    - name: Display Nodes
+  vars:
+    bastion_log: /tmp/openshift-post-upgrade-validation.log
+
+  tasks:
+
+    - name: Copy validation log to bastion
+      ansible.builtin.copy:
+        src: /tmp/openshift-post-upgrade-validation.log
+        dest: "{{ bastion_log }}"
+        mode: "0644"
+
+    - name: Verify validation log
+      ansible.builtin.stat:
+        path: "{{ bastion_log }}"
+      register: validation_log
+
+    - name: Display log location
       ansible.builtin.debug:
-        msg: "{{ nodes_summary.stdout_lines }}"
+        msg: "Post-upgrade validation log saved: {{ bastion_log }}"
