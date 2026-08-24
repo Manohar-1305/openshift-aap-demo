@@ -1,0 +1,2 @@
+# Get pod name and retrieve the logs
+oc logs -f -n aap "$(oc get pods -n aap --sort-by=.metadata.creationTimestamp -o name | grep 'pod/automation-job-' | tail -1)"
