@@ -48,7 +48,6 @@
         cmd: |
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenShift authentication: PASSED" >> "{{ validation_log }}"
       delegate_to: bastion
-      no_log: true
 
     - name: Get ClusterVersion
       ansible.builtin.command:
