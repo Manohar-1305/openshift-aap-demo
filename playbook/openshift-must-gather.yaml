@@ -6,46 +6,26 @@
 
   tasks:
 
-    - name: Create kubeconfig directory
-      ansible.builtin.file:
-        path: /tmp/aap-kube
-        state: directory
-        mode: "0700"
-
-    - name: Write CA certificate
-      ansible.builtin.copy:
-        dest: /tmp/aap-kube/ca.crt
-        mode: "0600"
-        content: "{{ lookup('env', 'K8S_AUTH_SSL_CA_CERT') }}"
-
-    - name: Create kubeconfig
-      ansible.builtin.copy:
-        dest: /tmp/aap-kube/config
-        mode: "0600"
-        content: |
-          apiVersion: v1
-          kind: Config
-          clusters:
-          - name: openshift
-            cluster:
-              server: "{{ lookup('env', 'K8S_AUTH_HOST') }}"
-              certificate-authority: /tmp/aap-kube/ca.crt
-          users:
-          - name: aap
-            user:
-              token: "{{ lookup('env', 'K8S_AUTH_API_KEY') }}"
-          contexts:
-          - name: openshift
-            context:
-              cluster: openshift
-              user: aap
-          current-context: openshift
-
     - name: Verify OpenShift authentication
       ansible.builtin.command:
+        cmd: >
+          oc login
+          --server={{ lookup('env', 'K8S_AUTH_HOST') }}
+          --token={{ lookup('env', 'K8S_AUTH_API_KEY') }}
+          --insecure-skip-tls-verify=true
+      register: oc_login
+      changed_when: false
+      no_log: true
+
+    - name: Verify OpenShift user
+      ansible.builtin.command:
         cmd: oc whoami
-      environment:
-        KUBECONFIG: /tmp/aap-kube/config
+      register: oc_user
+      changed_when: false
+
+    - name: Display OpenShift user
+      ansible.builtin.debug:
+        msg: "Authenticated as: {{ oc_user.stdout }}"
 
     - name: Create Must-Gather directory
       ansible.builtin.file:
@@ -56,14 +36,12 @@
     - name: Run OpenShift Must-Gather
       ansible.builtin.command:
         cmd: oc adm must-gather --dest-dir=/tmp/openshift-must-gather
-      environment:
-        KUBECONFIG: /tmp/aap-kube/config
       register: must_gather
       changed_when: true
 
     - name: Display Must-Gather output
       ansible.builtin.debug:
-        var: must_gather.stdout_lines
+        msg: "{{ must_gather.stdout_lines }}"
 
     - name: Display Must-Gather location
       ansible.builtin.debug:
