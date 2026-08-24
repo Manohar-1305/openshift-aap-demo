@@ -282,32 +282,23 @@
             | list
           }}
 
-    - name: Find Pods with unready containers
-      ansible.builtin.shell:
-        cmd: |
-          python3 - <<'PY'
-          import json
-
-          data = json.loads(r'''{{ all_pods.stdout | to_json }}''')
-
-          unhealthy = []
-
-          for pod in data.get("items", []):
-              statuses = pod.get("status", {}).get("containerStatuses", [])
-
-              if any(not container.get("ready", False) for container in statuses):
-                  namespace = pod.get("metadata", {}).get("namespace", "unknown")
-                  name = pod.get("metadata", {}).get("name", "unknown")
-                  unhealthy.append(f"{namespace}/{name}")
-
-          print(json.dumps(unhealthy))
-          PY
-      register: container_unhealthy_result
-      changed_when: false
-
-    - name: Set unready container pods
+    - name: Initialize unready container pod list
       ansible.builtin.set_fact:
-        container_unhealthy_pods: "{{ container_unhealthy_result.stdout | from_json }}"
+        container_unhealthy_pods: []
+
+    - name: Find Pods with unready containers
+      ansible.builtin.set_fact:
+        container_unhealthy_pods: "{{ container_unhealthy_pods + [item.metadata.namespace ~ '/' ~ item.metadata.name] }}"
+      loop: "{{ (all_pods.stdout | from_json)['items'] }}"
+      loop_control:
+        label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+      when:
+        - item.status.containerStatuses is defined
+        - >
+          item.status.containerStatuses
+          | selectattr('ready', 'equalto', false)
+          | list
+          | length > 0
 
     - name: Log Pods
       ansible.builtin.shell:
