@@ -1,16 +1,30 @@
 ---
-- name: OpenShift Post-Upgrade Validation
+- name: OpenShift SNO Post-Upgrade Validation
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
 
   vars:
-    validation_log: /tmp/openshift-post-upgrade-validation.log
-    ocp_kubeconfig: "{{ log_dir }}/kubeconfig_{{ ansible_date_time.iso8601_basic_short }}"
-    ocp_api_server: "https://api.<your-sno-cluster-domain>:6443"
-    ocp_token: "{{ vault_ocp_token }}"
+    log_dir: /tmp/ocp_health_checks
+    validation_log: "{{ log_dir }}/openshift-post-upgrade-validation_{{ ansible_date_time.iso8601_basic_short }}.log"
 
   tasks:
+
+    - name: Ensure log directory exists
+      ansible.builtin.file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Initialize log file with header
+      ansible.builtin.copy:
+        dest: "{{ validation_log }}"
+        mode: "0644"
+        content: |
+          ==============================================
+             OPENSHIFT SNO POST-UPGRADE VALIDATION
+             Run started: {{ ansible_date_time.iso8601 }}
+          ==============================================
 
     - name: Login to OpenShift
       ansible.builtin.command:
@@ -40,6 +54,12 @@
       register: cluster_nodes
       changed_when: false
 
+    - name: Get MachineConfigPools
+      ansible.builtin.command:
+        cmd: oc get mcp -o json
+      register: cluster_mcp
+      changed_when: false
+
     - name: Get cluster operators summary
       ansible.builtin.command:
         cmd: oc get clusteroperators
@@ -51,6 +71,86 @@
         cmd: oc get nodes
       register: nodes_summary
       changed_when: false
+
+    - name: Get MCP summary
+      ansible.builtin.command:
+        cmd: oc get mcp
+      register: mcp_summary
+      changed_when: false
+
+    - name: Get non-running pods cluster-wide
+      ansible.builtin.shell:
+        cmd: oc get pods -A | grep -v Running | grep -v Completed || true
+      register: pods_summary
+      changed_when: false
+
+    - name: Get etcd pod name (SNO - single member)
+      ansible.builtin.command:
+        cmd: oc get pods -n openshift-etcd -l app=etcd -o jsonpath='{.items[0].metadata.name}'
+      register: etcd_pod
+      changed_when: false
+
+    - name: Check etcd health (single member)
+      ansible.builtin.shell:
+        cmd: >
+          oc rsh -n openshift-etcd {{ etcd_pod.stdout }}
+          etcdctl endpoint health --cluster -w table
+      register: etcd_health_summary
+      changed_when: false
+      failed_when: false
+
+    - name: Get warning events
+      ansible.builtin.shell:
+        cmd: oc get events -A --field-selector type=Warning --sort-by='.lastTimestamp' || true
+      register: events_summary
+      changed_when: false
+
+    - name: Get ingress, console, image-registry operator status
+      ansible.builtin.command:
+        cmd: oc get co ingress console image-registry -o wide
+      register: key_operators_summary
+      changed_when: false
+
+    - name: Append raw check output to log
+      ansible.builtin.blockinfile:
+        path: "{{ validation_log }}"
+        marker: "# {mark} RAW CHECK OUTPUT"
+        block: |
+
+          ==============================================
+             CLUSTER OPERATORS
+          ==============================================
+          {{ operators_summary.stdout }}
+
+          ==============================================
+             NODES
+          ==============================================
+          {{ nodes_summary.stdout }}
+
+          ==============================================
+             MACHINECONFIGPOOLS
+          ==============================================
+          {{ mcp_summary.stdout }}
+
+          ==============================================
+             NON-RUNNING PODS (should be empty)
+          ==============================================
+          {{ pods_summary.stdout | default('None - all pods Running/Completed') }}
+
+          ==============================================
+             ETCD HEALTH (single member)
+          ==============================================
+          {{ etcd_health_summary.stdout | default(etcd_health_summary.stderr) }}
+
+          ==============================================
+             WARNING EVENTS
+          ==============================================
+          {{ events_summary.stdout | default('None') }}
+
+          ==============================================
+             INGRESS / CONSOLE / IMAGE-REGISTRY
+          ==============================================
+          {{ key_operators_summary.stdout }}
 
     - name: Validate ClusterVersion
       ansible.builtin.assert:
@@ -72,6 +172,8 @@
             | first == 'False'
         fail_msg: "ClusterVersion post-upgrade validation FAILED."
         success_msg: "ClusterVersion post-upgrade validation PASSED."
+      register: cv_validation
+      ignore_errors: true
 
     - name: Validate Cluster Operators
       ansible.builtin.assert:
@@ -96,6 +198,8 @@
       loop: "{{ (cluster_operators.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
+      register: co_validation
+      ignore_errors: true
 
     - name: Validate Nodes
       ansible.builtin.assert:
@@ -110,75 +214,69 @@
       loop: "{{ (cluster_nodes.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
+      register: node_validation
+      ignore_errors: true
 
-    - name: Build validation log
-      ansible.builtin.copy:
-        dest: "{{ validation_log }}"
-        mode: "0644"
-        content: |
+    - name: Validate MachineConfigPools
+      ansible.builtin.assert:
+        that:
+          - >
+            item.status.conditions
+            | selectattr('type', 'equalto', 'Updated')
+            | map(attribute='status')
+            | first == 'True'
+          - >
+            item.status.conditions
+            | selectattr('type', 'equalto', 'Degraded')
+            | map(attribute='status')
+            | first == 'False'
+        fail_msg: "MachineConfigPool {{ item.metadata.name }} FAILED post-upgrade validation."
+        success_msg: "MachineConfigPool {{ item.metadata.name }} PASSED."
+      loop: "{{ (cluster_mcp.stdout | from_json)['items'] }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      register: mcp_validation
+      ignore_errors: true
+
+    - name: Append validation results to log
+      ansible.builtin.blockinfile:
+        path: "{{ validation_log }}"
+        marker: "# {mark} VALIDATION RESULTS"
+        block: |
+
           ==============================================
-             OPENSHIFT POST-UPGRADE VALIDATION
+             VALIDATION RESULTS
           ==============================================
 
-          Cluster Version:
-          {{ (cluster_version.stdout | from_json).status.desired.version }}
+          Cluster Version: {{ (cluster_version.stdout | from_json).status.desired.version }}
 
-          ClusterVersion: PASSED
+          ClusterVersion:      {{ 'PASSED' if not cv_validation.failed else 'FAILED' }}
+          Cluster Operators:   {{ 'PASSED' if not co_validation.failed else 'FAILED' }}
+          Nodes:               {{ 'PASSED' if not node_validation.failed else 'FAILED' }}
+          MachineConfigPools:  {{ 'PASSED' if not mcp_validation.failed else 'FAILED' }}
 
-          Cluster Operators: PASSED
-
-          Nodes: PASSED
-
-          ==============================================
-             CLUSTER OPERATORS
-          ==============================================
-
-          {{ operators_summary.stdout }}
-
-          ==============================================
-             NODES
-          ==============================================
-
-          {{ nodes_summary.stdout }}
-
-          ==============================================
-             POST-UPGRADE VALIDATION PASSED
+          Run completed: {{ ansible_date_time.iso8601 }}
           ==============================================
 
     - name: Display validation summary
       ansible.builtin.debug:
         msg:
           - "=============================================="
-          - "     OPENSHIFT POST-UPGRADE VALIDATION"
+          - "   OPENSHIFT SNO POST-UPGRADE VALIDATION"
           - "=============================================="
           - "Cluster Version: {{ (cluster_version.stdout | from_json).status.desired.version }}"
-          - "ClusterVersion: PASSED"
-          - "Cluster Operators: PASSED"
-          - "Nodes: PASSED"
+          - "ClusterVersion:      {{ 'PASSED' if not cv_validation.failed else 'FAILED' }}"
+          - "Cluster Operators:   {{ 'PASSED' if not co_validation.failed else 'FAILED' }}"
+          - "Nodes:               {{ 'PASSED' if not node_validation.failed else 'FAILED' }}"
+          - "MachineConfigPools:  {{ 'PASSED' if not mcp_validation.failed else 'FAILED' }}"
           - "Log created: {{ validation_log }}"
           - "=============================================="
 
-- name: Save Validation Log on Bastion
-  hosts: bastion
-  gather_facts: false
-  become: true
-
-  vars:
-    bastion_log: /tmp/openshift-post-upgrade-validation.log
-
-  tasks:
-
-    - name: Copy validation log to bastion
-      ansible.builtin.copy:
-        src: /tmp/openshift-post-upgrade-validation.log
-        dest: "{{ bastion_log }}"
-        mode: "0644"
-
-    - name: Verify validation log
-      ansible.builtin.stat:
-        path: "{{ bastion_log }}"
-      register: validation_log
-
-    - name: Display log location
-      ansible.builtin.debug:
-        msg: "Post-upgrade validation log saved: {{ bastion_log }}"
+    - name: Fail play if any validation failed
+      ansible.builtin.fail:
+        msg: "One or more post-upgrade validations FAILED. Check {{ validation_log }} for details."
+      when: >
+        cv_validation.failed or
+        co_validation.failed or
+        node_validation.failed or
+        mcp_validation.failed
