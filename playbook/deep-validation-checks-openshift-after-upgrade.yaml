@@ -19,6 +19,18 @@
           ============================================================
       delegate_to: bastion
 
+    - name: Log validation start
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo "Start Date      : $(date '+%Y-%m-%d')"
+            echo "Start Time      : $(date '+%H:%M:%S')"
+            echo "Start Timestamp : $(date -Iseconds)"
+            echo "============================================================"
+            echo ""
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+
     - name: Login to OpenShift
       ansible.builtin.command:
         cmd: >
@@ -26,6 +38,7 @@
           --server={{ lookup('env', 'K8S_AUTH_HOST') }}
           --token={{ lookup('env', 'K8S_AUTH_API_KEY') }}
           --insecure-skip-tls-verify=true
+      register: oc_login
       changed_when: false
       no_log: true
 
@@ -48,7 +61,7 @@
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] CLUSTERVERSION"
             echo "----------------------------------------"
-            oc get clusterversion version
+            echo "{{ cluster_version.stdout }}"
           } >> "{{ validation_log }}"
       delegate_to: bastion
 
@@ -91,42 +104,60 @@
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] CLUSTEROPERATORS"
             echo "----------------------------------------"
-            oc get clusteroperators
+            echo "{{ cluster_operators.stdout }}"
           } >> "{{ validation_log }}"
       delegate_to: bastion
 
     - name: Validate ClusterOperators
-      ansible.builtin.assert:
-        that:
-          - >
-            item.status.conditions
-            | selectattr('type', 'equalto', 'Available')
-            | map(attribute='status')
-            | first == 'True'
-          - >
-            item.status.conditions
-            | selectattr('type', 'equalto', 'Progressing')
-            | map(attribute='status')
-            | first == 'False'
-          - >
-            item.status.conditions
-            | selectattr('type', 'equalto', 'Degraded')
-            | map(attribute='status')
-            | first == 'False'
-        fail_msg: "ClusterOperator {{ item.metadata.name }} validation FAILED."
-      loop: "{{ (cluster_operators.stdout | from_json)['items'] }}"
-      loop_control:
-        label: "{{ item.metadata.name }}"
+      block:
 
-    - name: Log ClusterOperators validation
-      ansible.builtin.shell:
-        cmd: |
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: PASSED" >> "{{ validation_log }}"
-      delegate_to: bastion
+        - name: Validate ClusterOperator conditions
+          ansible.builtin.assert:
+            that:
+              - >
+                item.status.conditions
+                | selectattr('type', 'equalto', 'Available')
+                | map(attribute='status')
+                | first == 'True'
+              - >
+                item.status.conditions
+                | selectattr('type', 'equalto', 'Progressing')
+                | map(attribute='status')
+                | first == 'False'
+              - >
+                item.status.conditions
+                | selectattr('type', 'equalto', 'Degraded')
+                | map(attribute='status')
+                | first == 'False'
+            fail_msg: "ClusterOperator {{ item.metadata.name }} validation FAILED."
+          loop: "{{ (cluster_operators.stdout | from_json)['items'] }}"
+          loop_control:
+            label: "{{ item.metadata.name }}"
+
+        - name: Log ClusterOperators validation
+          ansible.builtin.shell:
+            cmd: |
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
+
+      rescue:
+
+        - name: Log ClusterOperators failure
+          ansible.builtin.shell:
+            cmd: |
+              {
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: FAILED"
+                echo "Failed ClusterOperator: {{ item.metadata.name | default('Unknown') }}"
+              } >> "{{ validation_log }}"
+          delegate_to: bastion
+
+        - name: Fail ClusterOperators validation
+          ansible.builtin.fail:
+            msg: "ClusterOperators validation FAILED."
 
     - name: Get MachineConfigPools
       ansible.builtin.command:
-        cmd: oc get machineconfigpools -o json
+        cmd: oc get mcp -o json
       register: machine_config_pools
       changed_when: false
 
@@ -137,7 +168,7 @@
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] MACHINECONFIGPOOLS"
             echo "----------------------------------------"
-            oc get mcp
+            echo "{{ machine_config_pools.stdout }}"
           } >> "{{ validation_log }}"
       delegate_to: bastion
 
@@ -183,7 +214,7 @@
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] NODES"
             echo "----------------------------------------"
-            oc get nodes -o wide
+            echo "{{ cluster_nodes.stdout }}"
           } >> "{{ validation_log }}"
       delegate_to: bastion
 
@@ -228,7 +259,7 @@
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSRs"
             echo "----------------------------------------"
-            oc get csr
+            echo "{{ csrs.stdout }}"
           } >> "{{ validation_log }}"
       delegate_to: bastion
 
@@ -279,7 +310,7 @@
             | list
           }}
 
-    - name: Log Pod status
+    - name: Log Pods
       ansible.builtin.shell:
         cmd: |
           {
@@ -288,8 +319,7 @@
             echo "----------------------------------------"
             echo "Pending/Failed/Unknown pod count: {{ unhealthy_pods | length }}"
             echo "Running pods with unready containers: {{ container_unhealthy_pods | length }}"
-            echo ""
-            oc get pods -A
+            echo "{{ all_pods.stdout }}"
           } >> "{{ validation_log }}"
       delegate_to: bastion
 
@@ -308,7 +338,7 @@
 
     - name: Get Infrastructure
       ansible.builtin.command:
-        cmd: oc get infrastructure cluster
+        cmd: oc get infrastructure cluster -o yaml
       register: infrastructure
       changed_when: false
 
@@ -325,7 +355,7 @@
 
     - name: Get DNS
       ansible.builtin.command:
-        cmd: oc get dns cluster
+        cmd: oc get dns cluster -o yaml
       register: dns
       changed_when: false
 
@@ -342,7 +372,7 @@
 
     - name: Get Network
       ansible.builtin.command:
-        cmd: oc get network cluster
+        cmd: oc get network cluster -o yaml
       register: network
       changed_when: false
 
@@ -359,7 +389,7 @@
 
     - name: Get Ingress
       ansible.builtin.command:
-        cmd: oc get ingresscontroller -n openshift-ingress-operator
+        cmd: oc get ingresscontroller -n openshift-ingress-operator -o yaml
       register: ingress
       changed_when: false
 
@@ -376,13 +406,13 @@
 
     - name: Get Authentication
       ansible.builtin.command:
-        cmd: oc get clusteroperator authentication
+        cmd: oc get clusteroperator authentication -o yaml
       register: authentication
       changed_when: false
 
     - name: Get Console
       ansible.builtin.command:
-        cmd: oc get clusteroperator console
+        cmd: oc get clusteroperator console -o yaml
       register: console
       changed_when: false
 
@@ -403,7 +433,7 @@
 
     - name: Get StorageClasses
       ansible.builtin.command:
-        cmd: oc get storageclass
+        cmd: oc get storageclass -o yaml
       register: storage_classes
       changed_when: false
 
@@ -515,4 +545,4 @@
 
     - name: Display validation log location
       ansible.builtin.debug:
-        msg: "Post-upgrade validation log: {{ validation_log }}"
+        msg: "Post-upgrade validation log saved on Bastion: {{ validation_log }}"
