@@ -131,7 +131,6 @@
       ansible.builtin.shell:
         cmd: |
           {
-            echo "Cluster Operators: PASSED"
             echo ""
             echo "=============================================="
             echo "   CLUSTER OPERATORS"
