@@ -1,0 +1,76 @@
+---
+- name: OpenShift Cluster Health Check
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+
+    - name: Login to OpenShift
+      ansible.builtin.command:
+        cmd: >
+          oc login
+          --server={{ lookup('env', 'K8S_AUTH_HOST') }}
+          --token={{ lookup('env', 'K8S_AUTH_API_KEY') }}
+          --insecure-skip-tls-verify=true
+      changed_when: false
+      no_log: true
+
+    - name: Get cluster version
+      ansible.builtin.command:
+        cmd: oc get clusterversion version -o json
+      register: cluster_version
+      changed_when: false
+
+    - name: Get cluster operators
+      ansible.builtin.command:
+        cmd: oc get clusteroperators -o json
+      register: cluster_operators
+      changed_when: false
+
+    - name: Get cluster nodes
+      ansible.builtin.command:
+        cmd: oc get nodes -o json
+      register: cluster_nodes
+      changed_when: false
+
+    - name: Display cluster health
+      ansible.builtin.debug:
+        msg:
+          - "========== OPENSHIFT CLUSTER HEALTH =========="
+          - "Cluster Version: {{ (cluster_version.stdout | from_json).status.desired.version }}"
+          - "Cluster Available: {{ (cluster_version.stdout | from_json).status.conditions | selectattr('type', 'equalto', 'Available') | map(attribute='status') | first }}"
+          - "Cluster Progressing: {{ (cluster_version.stdout | from_json).status.conditions | selectattr('type', 'equalto', 'Progressing') | map(attribute='status') | first }}"
+          - "Cluster Degraded: {{ (cluster_version.stdout | from_json).status.conditions | selectattr('type', 'equalto', 'Failing') | map(attribute='status') | first }}"
+          - ""
+          - "---------- Cluster Operators ----------"
+          - >-
+            {{
+              (cluster_operators.stdout | from_json).items
+              | map(attribute='metadata.name')
+              | zip(
+                  (cluster_operators.stdout | from_json).items
+                  | map(attribute='status.conditions')
+                  | map('selectattr', 'type', 'equalto', 'Available')
+                  | map('list')
+                  | map('first')
+                  | map(attribute='status')
+                )
+              | list
+            }}
+          - ""
+          - "---------- Nodes ----------"
+          - >-
+            {{
+              (cluster_nodes.stdout | from_json).items
+              | map(attribute='metadata.name')
+              | zip(
+                  (cluster_nodes.stdout | from_json).items
+                  | map(attribute='status.conditions')
+                  | map('selectattr', 'type', 'equalto', 'Ready')
+                  | map('list')
+                  | map('first')
+                  | map(attribute='status')
+                )
+              | list
+            }}
