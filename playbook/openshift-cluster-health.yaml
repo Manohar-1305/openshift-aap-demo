@@ -1,5 +1,5 @@
 ---
-- name: OpenShift Cluster Health Check
+- name: OpenShift Post-Upgrade Validation
   hosts: localhost
   connection: local
   gather_facts: false
@@ -34,43 +34,95 @@
       register: cluster_nodes
       changed_when: false
 
-    - name: Display cluster health
+    - name: Get cluster operators summary
+      ansible.builtin.command:
+        cmd: oc get clusteroperators
+      register: operators_summary
+      changed_when: false
+
+    - name: Get nodes summary
+      ansible.builtin.command:
+        cmd: oc get nodes
+      register: nodes_summary
+      changed_when: false
+
+    - name: Validate ClusterVersion
+      ansible.builtin.assert:
+        that:
+          - >
+            (cluster_version.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Available')
+            | map(attribute='status')
+            | first == 'True'
+          - >
+            (cluster_version.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Progressing')
+            | map(attribute='status')
+            | first == 'False'
+          - >
+            (cluster_version.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Failing')
+            | map(attribute='status')
+            | first == 'False'
+        fail_msg: "ClusterVersion post-upgrade validation FAILED."
+        success_msg: "ClusterVersion post-upgrade validation PASSED."
+
+    - name: Validate Cluster Operators
+      ansible.builtin.assert:
+        that:
+          - >
+            item.status.conditions
+            | selectattr('type', 'equalto', 'Available')
+            | map(attribute='status')
+            | first == 'True'
+          - >
+            item.status.conditions
+            | selectattr('type', 'equalto', 'Progressing')
+            | map(attribute='status')
+            | first == 'False'
+          - >
+            item.status.conditions
+            | selectattr('type', 'equalto', 'Degraded')
+            | map(attribute='status')
+            | first == 'False'
+        fail_msg: "ClusterOperator {{ item.metadata.name }} FAILED post-upgrade validation."
+        success_msg: "ClusterOperator {{ item.metadata.name }} PASSED."
+      loop: "{{ (cluster_operators.stdout | from_json).items }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Validate Nodes
+      ansible.builtin.assert:
+        that:
+          - >
+            item.status.conditions
+            | selectattr('type', 'equalto', 'Ready')
+            | map(attribute='status')
+            | first == 'True'
+        fail_msg: "Node {{ item.metadata.name }} is NOT Ready."
+        success_msg: "Node {{ item.metadata.name }} is Ready."
+      loop: "{{ (cluster_nodes.stdout | from_json).items }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Display Post-Upgrade Validation Summary
       ansible.builtin.debug:
         msg:
-          - "========== OPENSHIFT CLUSTER HEALTH =========="
+          - "=============================================="
+          - "     OPENSHIFT POST-UPGRADE VALIDATION"
+          - "=============================================="
           - "Cluster Version: {{ (cluster_version.stdout | from_json).status.desired.version }}"
-          - "Cluster Available: {{ (cluster_version.stdout | from_json).status.conditions | selectattr('type', 'equalto', 'Available') | map(attribute='status') | first }}"
-          - "Cluster Progressing: {{ (cluster_version.stdout | from_json).status.conditions | selectattr('type', 'equalto', 'Progressing') | map(attribute='status') | first }}"
-          - "Cluster Degraded: {{ (cluster_version.stdout | from_json).status.conditions | selectattr('type', 'equalto', 'Failing') | map(attribute='status') | first }}"
-          - ""
-          - "---------- Cluster Operators ----------"
-          - >-
-            {{
-              (cluster_operators.stdout | from_json).items
-              | map(attribute='metadata.name')
-              | zip(
-                  (cluster_operators.stdout | from_json).items
-                  | map(attribute='status.conditions')
-                  | map('selectattr', 'type', 'equalto', 'Available')
-                  | map('list')
-                  | map('first')
-                  | map(attribute='status')
-                )
-              | list
-            }}
-          - ""
-          - "---------- Nodes ----------"
-          - >-
-            {{
-              (cluster_nodes.stdout | from_json).items
-              | map(attribute='metadata.name')
-              | zip(
-                  (cluster_nodes.stdout | from_json).items
-                  | map(attribute='status.conditions')
-                  | map('selectattr', 'type', 'equalto', 'Ready')
-                  | map('list')
-                  | map('first')
-                  | map(attribute='status')
-                )
-              | list
-            }}
+          - "ClusterVersion: PASSED"
+          - "Cluster Operators: PASSED"
+          - "Nodes: PASSED"
+          - "=============================================="
+          - "        POST-UPGRADE VALIDATION PASSED"
+          - "=============================================="
+
+    - name: Display Cluster Operators
+      ansible.builtin.debug:
+        msg: "{{ operators_summary.stdout_lines }}"
+
+    - name: Display Nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_summary.stdout_lines }}"
