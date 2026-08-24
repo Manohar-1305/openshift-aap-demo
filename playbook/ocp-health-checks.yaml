@@ -1,0 +1,178 @@
+---
+- name: OpenShift SNO Post-Upgrade Health Check
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  vars:
+    log_dir: "/tmp/ocp_health_checks"
+    log_file: "{{ log_dir }}/sno_health_{{ ansible_date_time.iso8601_basic_short }}.log"
+
+  tasks:
+
+    - name: Ensure log directory exists
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Initialize log file with header
+      copy:
+        dest: "{{ log_file }}"
+        content: |
+          =========================================
+          OpenShift SNO Post-Upgrade Health Check
+          Run started: {{ ansible_date_time.iso8601 }}
+          =========================================
+
+    - name: Check cluster version
+      shell: oc get clusterversion
+      register: clusterversion_out
+      changed_when: false
+
+    - name: Log cluster version
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Cluster Version ---\n{{ clusterversion_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check clusterversion history detail
+      shell: oc get clusterversion -o jsonpath='{.items[0].status.history[0]}'
+      register: cv_history_out
+      changed_when: false
+
+    - name: Log clusterversion history
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Clusterversion History (latest) ---\n{{ cv_history_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check cluster operators
+      shell: oc get co
+      register: co_out
+      changed_when: false
+
+    - name: Log cluster operators
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Cluster Operators ---\n{{ co_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check for degraded/unhealthy operators
+      shell: oc get co --no-headers | awk '{print $1, $3, $4, $5}' | grep -Ev "True False False"
+      register: co_unhealthy_out
+      changed_when: false
+      failed_when: false
+
+    - name: Log unhealthy operators (if any)
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Unhealthy Operators (should be empty) ---\n{{ co_unhealthy_out.stdout | default('None - all operators healthy') }}"
+        insertafter: EOF
+
+    - name: Check node status (single node)
+      shell: oc get nodes -o wide
+      register: node_out
+      changed_when: false
+
+    - name: Log node status
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Node Status ---\n{{ node_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check MachineConfigPool status
+      shell: oc get mcp
+      register: mcp_out
+      changed_when: false
+
+    - name: Log MCP status
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- MachineConfigPool Status ---\n{{ mcp_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check for non-running pods cluster-wide
+      shell: oc get pods -A | grep -v Running | grep -v Completed
+      register: pods_out
+      changed_when: false
+      failed_when: false
+
+    - name: Log non-running pods
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Non-Running Pods (should be empty) ---\n{{ pods_out.stdout | default('None - all pods Running/Completed') }}"
+        insertafter: EOF
+
+    - name: Get etcd pod name (SNO - single member)
+      shell: oc get pods -n openshift-etcd -l app=etcd -o jsonpath='{.items[0].metadata.name}'
+      register: etcd_pod_out
+      changed_when: false
+
+    - name: Check etcd health (single member on SNO)
+      shell: >
+        oc rsh -n openshift-etcd {{ etcd_pod_out.stdout }}
+        etcdctl endpoint health --cluster -w table
+      register: etcd_health_out
+      changed_when: false
+      failed_when: false
+
+    - name: Log etcd health
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Etcd Health (single member) ---\n{{ etcd_health_out.stdout | default(etcd_health_out.stderr) }}"
+        insertafter: EOF
+
+    - name: Check kube-apiserver progressing condition
+      shell: oc get co kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Progressing")]}'
+      register: apiserver_out
+      changed_when: false
+
+    - name: Log kube-apiserver condition
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- kube-apiserver Progressing Condition ---\n{{ apiserver_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check warning events
+      shell: oc get events -A --field-selector type=Warning --sort-by='.lastTimestamp'
+      register: events_out
+      changed_when: false
+      failed_when: false
+
+    - name: Log warning events
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Warning Events ---\n{{ events_out.stdout | default('None') }}"
+        insertafter: EOF
+
+    - name: Check ingress and console operators
+      shell: oc get co ingress console -o wide
+      register: ingress_console_out
+      changed_when: false
+
+    - name: Log ingress and console
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Ingress / Console Operators ---\n{{ ingress_console_out.stdout }}"
+        insertafter: EOF
+
+    - name: Check image-registry operator
+      shell: oc get co image-registry
+      register: registry_out
+      changed_when: false
+
+    - name: Log image-registry
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n--- Image Registry Operator ---\n{{ registry_out.stdout }}"
+        insertafter: EOF
+
+    - name: Append run completion timestamp
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "\n=========================================\nRun completed: {{ ansible_date_time.iso8601 }}\n========================================="
+        insertafter: EOF
+
+    - name: Display log file location
+      debug:
+        msg: "Health check complete. Full log saved at: {{ log_file }}"
