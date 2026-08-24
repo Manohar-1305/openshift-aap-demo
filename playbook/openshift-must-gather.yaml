@@ -1,0 +1,28 @@
+---
+- name: OpenShift Must-Gather
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+
+    - name: Create Must-Gather directory
+      ansible.builtin.file:
+        path: "/tmp/must-gather-{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+        state: directory
+        mode: "0755"
+      register: must_gather_dir
+
+    - name: Run OpenShift Must-Gather
+      ansible.builtin.command:
+        cmd: >
+          oc adm must-gather
+          --dest-dir={{ must_gather_dir.path }}
+      environment:
+        KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') | default('', true) }}"
+      register: must_gather_result
+      changed_when: true
+
+    - name: Display Must-Gather location
+      ansible.builtin.debug:
+        msg: "Must-Gather collected at: {{ must_gather_dir.path }}"
