@@ -26,6 +26,15 @@
              Run started: {{ ansible_date_time.iso8601 }}
           ==============================================
 
+    - name: Verify K8S auth env vars are present
+      ansible.builtin.fail:
+        msg: >
+          K8S_AUTH_HOST or K8S_AUTH_API_KEY is empty. Attach an
+          OpenShift/Kubernetes API credential to this Job Template in AAP.
+      when: >
+        (lookup('env', 'K8S_AUTH_HOST') | length == 0) or
+        (lookup('env', 'K8S_AUTH_API_KEY') | length == 0)
+
     - name: Login to OpenShift
       ansible.builtin.command:
         cmd: >
@@ -33,8 +42,14 @@
           --server={{ lookup('env', 'K8S_AUTH_HOST') }}
           --token={{ lookup('env', 'K8S_AUTH_API_KEY') }}
           --insecure-skip-tls-verify=true
+      register: login_result
       changed_when: false
       no_log: true
+
+    - name: Verify login succeeded
+      ansible.builtin.fail:
+        msg: "oc login failed — check the credential's token validity and API server reachability."
+      when: login_result.rc != 0
 
     - name: Get cluster version
       ansible.builtin.command:
