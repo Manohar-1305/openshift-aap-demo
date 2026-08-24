@@ -87,7 +87,7 @@
             | first == 'False'
         fail_msg: "ClusterOperator {{ item.metadata.name }} FAILED post-upgrade validation."
         success_msg: "ClusterOperator {{ item.metadata.name }} PASSED."
-      loop: "{{ (cluster_operators.stdout | from_json).items }}"
+      loop: "{{ (cluster_operators.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
 
@@ -101,7 +101,7 @@
             | first == 'True'
         fail_msg: "Node {{ item.metadata.name }} is NOT Ready."
         success_msg: "Node {{ item.metadata.name }} is Ready."
-      loop: "{{ (cluster_nodes.stdout | from_json).items }}"
+      loop: "{{ (cluster_nodes.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
 
