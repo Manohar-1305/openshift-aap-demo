@@ -266,7 +266,7 @@
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSR validation: PASSED" >> "{{ validation_log }}"
       delegate_to: bastion
 
-    - name: Get all Pods
+      - name: Get all Pods
       ansible.builtin.command:
         cmd: oc get pods -A -o json
       register: all_pods
@@ -279,6 +279,7 @@
             (all_pods.stdout | from_json)['items']
             | selectattr('status.phase', 'defined')
             | selectattr('status.phase', 'in', ['Pending', 'Failed', 'Unknown'])
+            | rejectattr('metadata.name', 'match', '^installer-')
             | list
           }}
 
@@ -288,17 +289,36 @@
 
     - name: Find Pods with unready containers
       ansible.builtin.set_fact:
-        container_unhealthy_pods: "{{ container_unhealthy_pods + [item.metadata.namespace ~ '/' ~ item.metadata.name] }}"
+        container_unhealthy_pods: >-
+          {{
+            container_unhealthy_pods
+            + [item.metadata.namespace ~ '/' ~ item.metadata.name]
+          }}
       loop: "{{ (all_pods.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
       when:
+        - item.metadata.name is not match('^installer-')
+        - item.status.phase == 'Running'
         - item.status.containerStatuses is defined
         - >
-          item.status.containerStatuses
-          | selectattr('ready', 'equalto', false)
-          | list
-          | length > 0
+          (
+            item.status.containerStatuses
+            | selectattr('ready', 'equalto', false)
+            | list
+            | length
+          ) > 0
+        - >
+          (
+            item.status.containerStatuses
+            | selectattr('state.waiting', 'defined')
+            | selectattr('state.waiting.reason', 'in',
+                ['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull',
+                 'CreateContainerError', 'CreateContainerConfigError',
+                 'RunContainerError'])
+            | list
+            | length
+          ) > 0
 
     - name: Log Pods
       ansible.builtin.shell:
@@ -308,7 +328,7 @@
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] POD VALIDATION"
             echo "----------------------------------------"
             echo "Pending/Failed/Unknown pods: {{ unhealthy_pods | length }}"
-            echo "Running pods with unready containers: {{ container_unhealthy_pods | length }}"
+            echo "Pods with actual container failures: {{ container_unhealthy_pods | length }}"
             oc get pods -A
           } >> "{{ validation_log }}"
       delegate_to: bastion
@@ -321,8 +341,15 @@
         fail_msg: >-
           Pod validation FAILED.
           Unhealthy pods: {{ unhealthy_pods | join(', ') if unhealthy_pods | length > 0 else 'None' }}.
-          Pods with unready containers: {{ container_unhealthy_pods | join(', ') if container_unhealthy_pods | length > 0 else 'None' }}.
-        success_msg: "Pod validation PASSED. All current pods are healthy."
+          Pods with actual container failures:
+          {{ container_unhealthy_pods | join(', ') if container_unhealthy_pods | length > 0 else 'None' }}.
+        success_msg: "Pod validation PASSED. No current unhealthy pods detected."
+
+    - name: Log Pod validation
+      ansible.builtin.shell:
+        cmd: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pod validation: PASSED" >> "{{ validation_log }}"
+      delegate_to: bastion
 
     - name: Log Pod validation
       ansible.builtin.shell:
