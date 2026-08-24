@@ -17,8 +17,6 @@
           ============================================================
                   OPENSHIFT POST-UPGRADE VALIDATION
           ============================================================
-          Start Timestamp: {{ ansible_date_time.iso8601 }}
-          ============================================================
       delegate_to: bastion
 
     - name: Login to OpenShift
@@ -128,7 +126,7 @@
 
     - name: Get MachineConfigPools
       ansible.builtin.command:
-        cmd: oc get mcp -o json
+        cmd: oc get machineconfigpools -o json
       register: machine_config_pools
       changed_when: false
 
@@ -258,19 +256,39 @@
           {{
             (all_pods.stdout | from_json)['items']
             | selectattr('status.phase', 'defined')
-            | rejectattr('status.phase', 'equalto', 'Running')
-            | rejectattr('status.phase', 'equalto', 'Succeeded')
+            | selectattr('status.phase', 'in', ['Pending', 'Failed', 'Unknown'])
             | list
           }}
 
-    - name: Log Pods
+    - name: Find Pods with unready containers
+      ansible.builtin.set_fact:
+        container_unhealthy_pods: >-
+          {{
+            (all_pods.stdout | from_json)['items']
+            | selectattr('status.phase', 'equalto', 'Running')
+            | selectattr('status.containerStatuses', 'defined')
+            | selectattr(
+                'status.containerStatuses'
+                | map(attribute='ready')
+                | select('equalto', false)
+                | list
+                | length,
+                '>',
+                0
+              )
+            | list
+          }}
+
+    - name: Log Pod status
       ansible.builtin.shell:
         cmd: |
           {
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] POD VALIDATION"
             echo "----------------------------------------"
-            echo "Non-running pod count: {{ unhealthy_pods | length }}"
+            echo "Pending/Failed/Unknown pod count: {{ unhealthy_pods | length }}"
+            echo "Running pods with unready containers: {{ container_unhealthy_pods | length }}"
+            echo ""
             oc get pods -A
           } >> "{{ validation_log }}"
       delegate_to: bastion
@@ -279,6 +297,7 @@
       ansible.builtin.assert:
         that:
           - unhealthy_pods | length == 0
+          - container_unhealthy_pods | length == 0
         fail_msg: "Pod validation FAILED. Unhealthy pod(s) found."
 
     - name: Log Pod validation
@@ -448,7 +467,7 @@
             | selectattr('type', 'equalto', 'Degraded')
             | map(attribute='status')
             | first == 'False'
-        fail_msg: "Authentication validation FAILED."
+        fail_msg: "Authentication operator validation FAILED."
 
     - name: Log Authentication validation
       ansible.builtin.shell:
@@ -475,7 +494,7 @@
             | selectattr('type', 'equalto', 'Degraded')
             | map(attribute='status')
             | first == 'False'
-        fail_msg: "Console validation FAILED."
+        fail_msg: "Console operator validation FAILED."
 
     - name: Log Console validation
       ansible.builtin.shell:
