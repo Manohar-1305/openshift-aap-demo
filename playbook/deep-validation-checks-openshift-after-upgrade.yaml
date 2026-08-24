@@ -17,6 +17,8 @@
           ============================================================
                   OPENSHIFT POST-UPGRADE VALIDATION
           ============================================================
+          Start Timestamp: {{ ansible_date_time.iso8601 }}
+          ============================================================
       delegate_to: bastion
 
     - name: Login to OpenShift
@@ -70,6 +72,7 @@
             | selectattr('type', 'equalto', 'Failing')
             | map(attribute='status')
             | first == 'False'
+        fail_msg: "ClusterVersion validation FAILED."
 
     - name: Log ClusterVersion validation
       ansible.builtin.shell:
@@ -113,7 +116,7 @@
             | map(attribute='status')
             | first == 'False'
         fail_msg: "ClusterOperator {{ item.metadata.name }} validation FAILED."
-      loop: "{{ (cluster_operators.stdout | from_json).items }}"
+      loop: "{{ (cluster_operators.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
 
@@ -159,7 +162,7 @@
             | map(attribute='status')
             | first == 'False'
         fail_msg: "MachineConfigPool {{ item.metadata.name }} validation FAILED."
-      loop: "{{ (machine_config_pools.stdout | from_json).items }}"
+      loop: "{{ (machine_config_pools.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
 
@@ -195,7 +198,7 @@
             | map(attribute='status')
             | first == 'True'
         fail_msg: "Node {{ item.metadata.name }} is NOT Ready."
-      loop: "{{ (cluster_nodes.stdout | from_json).items }}"
+      loop: "{{ (cluster_nodes.stdout | from_json)['items'] }}"
       loop_control:
         label: "{{ item.metadata.name }}"
 
@@ -215,7 +218,7 @@
       ansible.builtin.set_fact:
         pending_csrs: >-
           {{
-            (csrs.stdout | from_json).items
+            (csrs.stdout | from_json)['items']
             | selectattr('status.certificate', 'undefined')
             | list
           }}
@@ -253,7 +256,7 @@
       ansible.builtin.set_fact:
         unhealthy_pods: >-
           {{
-            (all_pods.stdout | from_json).items
+            (all_pods.stdout | from_json)['items']
             | selectattr('status.phase', 'defined')
             | rejectattr('status.phase', 'equalto', 'Running')
             | rejectattr('status.phase', 'equalto', 'Succeeded')
@@ -424,6 +427,60 @@
       ansible.builtin.shell:
         cmd: |
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] API health validation: PASSED" >> "{{ validation_log }}"
+      delegate_to: bastion
+
+    - name: Validate Authentication operator
+      ansible.builtin.command:
+        cmd: oc get clusteroperator authentication -o json
+      register: authentication_json
+      changed_when: false
+
+    - name: Assert Authentication
+      ansible.builtin.assert:
+        that:
+          - >
+            (authentication_json.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Available')
+            | map(attribute='status')
+            | first == 'True'
+          - >
+            (authentication_json.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Degraded')
+            | map(attribute='status')
+            | first == 'False'
+        fail_msg: "Authentication validation FAILED."
+
+    - name: Log Authentication validation
+      ansible.builtin.shell:
+        cmd: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Authentication validation: PASSED" >> "{{ validation_log }}"
+      delegate_to: bastion
+
+    - name: Validate Console operator
+      ansible.builtin.command:
+        cmd: oc get clusteroperator console -o json
+      register: console_json
+      changed_when: false
+
+    - name: Assert Console
+      ansible.builtin.assert:
+        that:
+          - >
+            (console_json.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Available')
+            | map(attribute='status')
+            | first == 'True'
+          - >
+            (console_json.stdout | from_json).status.conditions
+            | selectattr('type', 'equalto', 'Degraded')
+            | map(attribute='status')
+            | first == 'False'
+        fail_msg: "Console validation FAILED."
+
+    - name: Log Console validation
+      ansible.builtin.shell:
+        cmd: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Console validation: PASSED" >> "{{ validation_log }}"
       delegate_to: bastion
 
     - name: Log validation completion
