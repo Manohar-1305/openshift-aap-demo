@@ -266,7 +266,7 @@
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSR validation: PASSED" >> "{{ validation_log }}"
       delegate_to: bastion
 
-      - name: Get all Pods
+    - name: Get all Pods
       ansible.builtin.command:
         cmd: oc get pods -A -o json
       register: all_pods
@@ -344,12 +344,6 @@
           Pods with actual container failures:
           {{ container_unhealthy_pods | join(', ') if container_unhealthy_pods | length > 0 else 'None' }}.
         success_msg: "Pod validation PASSED. No current unhealthy pods detected."
-
-    - name: Log Pod validation
-      ansible.builtin.shell:
-        cmd: |
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pod validation: PASSED" >> "{{ validation_log }}"
-      delegate_to: bastion
 
     - name: Log Pod validation
       ansible.builtin.shell:
