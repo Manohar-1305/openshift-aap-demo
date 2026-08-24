@@ -12,10 +12,12 @@
         kind: NodeMetrics
       register: node_metrics
 
-    - name: Display CPU and memory usage
+    - name: Display node resource usage
       ansible.builtin.debug:
-        msg:
-          node: "{{ item.metadata.name }}"
-          cpu_usage: "{{ item.usage.cpu }}"
-          memory_usage: "{{ item.usage.memory }}"
+        msg: |
+          Hostname     : {{ item.metadata.name }}
+          CPU Usage    : {{ item.usage.cpu }}
+          Memory Usage : {{ item.usage.memory }}
       loop: "{{ node_metrics.resources }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
