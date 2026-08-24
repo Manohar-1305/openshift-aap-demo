@@ -12,6 +12,12 @@
         state: directory
         mode: "0700"
 
+    - name: Write CA certificate
+      ansible.builtin.copy:
+        dest: /tmp/aap-kube/ca.crt
+        mode: "0600"
+        content: "{{ lookup('env', 'K8S_AUTH_SSL_CA_CERT') }}"
+
     - name: Create kubeconfig
       ansible.builtin.copy:
         dest: /tmp/aap-kube/config
@@ -23,7 +29,7 @@
           - name: openshift
             cluster:
               server: "{{ lookup('env', 'K8S_AUTH_HOST') }}"
-              certificate-authority-data: "{{ lookup('env', 'K8S_AUTH_SSL_CA_CERT') | b64encode }}"
+              certificate-authority: /tmp/aap-kube/ca.crt
           users:
           - name: aap
             user:
