@@ -6,15 +6,52 @@
 
   tasks:
 
+    - name: Create kubeconfig directory
+      ansible.builtin.file:
+        path: /tmp/aap-kube
+        state: directory
+        mode: "0700"
+
+    - name: Create kubeconfig
+      ansible.builtin.copy:
+        dest: /tmp/aap-kube/config
+        mode: "0600"
+        content: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - name: openshift
+            cluster:
+              server: "{{ lookup('env', 'K8S_AUTH_HOST') }}"
+              certificate-authority-data: "{{ lookup('env', 'K8S_AUTH_SSL_CA_CERT') | b64encode }}"
+          users:
+          - name: aap
+            user:
+              token: "{{ lookup('env', 'K8S_AUTH_API_KEY') }}"
+          contexts:
+          - name: openshift
+            context:
+              cluster: openshift
+              user: aap
+          current-context: openshift
+
+    - name: Verify OpenShift authentication
+      ansible.builtin.command:
+        cmd: oc whoami
+      environment:
+        KUBECONFIG: /tmp/aap-kube/config
+
     - name: Create Must-Gather directory
       ansible.builtin.file:
-        path: "/tmp/openshift-must-gather"
+        path: /tmp/openshift-must-gather
         state: directory
         mode: "0755"
 
     - name: Run OpenShift Must-Gather
       ansible.builtin.command:
         cmd: oc adm must-gather --dest-dir=/tmp/openshift-must-gather
+      environment:
+        KUBECONFIG: /tmp/aap-kube/config
       register: must_gather
       changed_when: true
 
