@@ -8,6 +8,9 @@
     log_dir: /tmp/ocp_health_checks
     validation_log: "{{ log_dir }}/openshift-post-upgrade-validation_{{ ansible_date_time.iso8601_basic_short }}.log"
 
+  environment:
+    KUBECONFIG: "{{ log_dir }}/kubeconfig_{{ ansible_date_time.iso8601_basic_short }}"
+
   tasks:
 
     - name: Ensure log directory exists
