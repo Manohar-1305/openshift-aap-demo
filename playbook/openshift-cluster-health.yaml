@@ -6,6 +6,9 @@
 
   vars:
     validation_log: /tmp/openshift-post-upgrade-validation.log
+    ocp_kubeconfig: "{{ log_dir }}/kubeconfig_{{ ansible_date_time.iso8601_basic_short }}"
+    ocp_api_server: "https://api.<your-sno-cluster-domain>:6443"
+    ocp_token: "{{ vault_ocp_token }}"
 
   tasks:
 
