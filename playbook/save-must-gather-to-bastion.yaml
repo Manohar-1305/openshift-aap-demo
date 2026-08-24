@@ -1,5 +1,5 @@
 ---
-- name: OpenShift Must-Gather
+- name: Run OpenShift Must-Gather
   hosts: localhost
   connection: local
   gather_facts: false
@@ -7,39 +7,25 @@
   vars:
     must_gather_dir: /tmp/openshift-must-gather
     must_gather_archive: /tmp/openshift-must-gather.tar.gz
-    bastion_host: bastion.ocp.manohar.in
-    bastion_user: root
-    bastion_dir: /tmp/openshift-must-gather
 
   tasks:
 
-    - name: Verify OpenShift authentication
+    - name: Login to OpenShift
       ansible.builtin.command:
         cmd: >
           oc login
           --server={{ lookup('env', 'K8S_AUTH_HOST') }}
           --token={{ lookup('env', 'K8S_AUTH_API_KEY') }}
           --insecure-skip-tls-verify=true
-      register: oc_login
-      changed_when: false
       no_log: true
-
-    - name: Verify OpenShift user
-      ansible.builtin.command:
-        cmd: oc whoami
-      register: oc_user
       changed_when: false
-
-    - name: Display OpenShift user
-      ansible.builtin.debug:
-        msg: "Authenticated as: {{ oc_user.stdout }}"
 
     - name: Remove previous Must-Gather directory
       ansible.builtin.file:
         path: "{{ must_gather_dir }}"
         state: absent
 
-    - name: Remove previous Must-Gather archive
+    - name: Remove previous archive
       ansible.builtin.file:
         path: "{{ must_gather_archive }}"
         state: absent
@@ -58,50 +44,36 @@
 
     - name: Create Must-Gather archive
       ansible.builtin.command:
-        cmd: >
-          tar -czf
-          {{ must_gather_archive }}
-          -C
-          {{ must_gather_dir }}
-          .
-      register: archive_result
+        cmd: tar -czf {{ must_gather_archive }} -C {{ must_gather_dir }} .
       changed_when: true
 
-    - name: Display archive information
-      ansible.builtin.stat:
-        path: "{{ must_gather_archive }}"
-      register: archive_info
+- name: Save Must-Gather on Bastion
+  hosts: bastion
+  gather_facts: false
+  become: true
 
-    - name: Display archive size
-      ansible.builtin.debug:
-        msg: "Must-Gather archive created: {{ must_gather_archive }} ({{ archive_info.stat.size }} bytes)"
+  vars:
+    bastion_dir: /tmp/openshift-must-gather
 
-    - name: Create destination directory on bastion
-      ansible.builtin.shell:
-        cmd: >
-          ssh
-          -o StrictHostKeyChecking=no
-          {{ bastion_user }}@{{ bastion_host }}
-          "mkdir -p {{ bastion_dir }}"
+  tasks:
+
+    - name: Create Must-Gather directory on bastion
+      ansible.builtin.file:
+        path: "{{ bastion_dir }}"
+        state: directory
+        mode: "0755"
 
     - name: Copy Must-Gather archive to bastion
-      ansible.builtin.shell:
-        cmd: >
-          scp
-          -o StrictHostKeyChecking=no
-          {{ must_gather_archive }}
-          {{ bastion_user }}@{{ bastion_host }}:{{ bastion_dir }}/openshift-must-gather.tar.gz
+      ansible.builtin.copy:
+        src: /tmp/openshift-must-gather.tar.gz
+        dest: "{{ bastion_dir }}/openshift-must-gather.tar.gz"
+        mode: "0644"
 
-    - name: Verify archive on bastion
-      ansible.builtin.shell:
-        cmd: >
-          ssh
-          -o StrictHostKeyChecking=no
-          {{ bastion_user }}@{{ bastion_host }}
-          "ls -lh {{ bastion_dir }}/openshift-must-gather.tar.gz"
-      register: bastion_archive
-      changed_when: false
+    - name: Verify archive
+      ansible.builtin.stat:
+        path: "{{ bastion_dir }}/openshift-must-gather.tar.gz"
+      register: archive
 
-    - name: Display final location
+    - name: Display archive
       ansible.builtin.debug:
-        msg: "{{ bastion_archive.stdout }}"
+        msg: "Saved: {{ bastion_dir }}/openshift-must-gather.tar.gz ({{ archive.stat.size }} bytes)"
