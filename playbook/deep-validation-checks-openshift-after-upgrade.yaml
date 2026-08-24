@@ -1,29 +1,37 @@
 ---
+- name: Initialize OpenShift Post-Upgrade Validation 
+  hosts: bastion
+  gather_facts: true
+  become: true
+
+  vars:
+    validation_log: "/tmp/openshift-post-upgrade-validation-{{ ansible_date_time.date }}_{{ ansible_date_time.time | replace(':', '-') }}.log"
+
+  tasks:
+
+    - name: Initialize validation log
+      ansible.builtin.copy:
+        dest: "{{ validation_log }}"
+        mode: "0644"
+        content: |
+          ============================================================
+                  OPENSHIFT POST-UPGRADE VALIDATION
+          ============================================================
+
+    - name: Display log location
+      ansible.builtin.debug:
+        msg: "Validation log: {{ validation_log }}"
+
+
 - name: OpenShift Post-Upgrade Validation
   hosts: localhost
   connection: local
   gather_facts: true
 
   vars:
-    bastion_log: "/tmp/openshift-post-upgrade-validation-{{ ansible_date_time.date }}_{{ ansible_date_time.time | replace(':', '-') }}.log"
+    validation_log: "{{ hostvars['bastion']['validation_log'] }}"
 
   tasks:
-
-    - name: Initialize validation log on bastion
-      ansible.builtin.shell:
-        cmd: |
-          ssh root@bastion.ocp.manohar.in "cat > '{{ bastion_log }}' <<'EOF'
-          ============================================================
-                  OPENSHIFT POST-UPGRADE VALIDATION
-          ============================================================
-          EOF"
-      no_log: true
-
-    - name: Log validation start
-      ansible.builtin.shell:
-        cmd: |
-          ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] VALIDATION STARTED' >> '{{ bastion_log }}'"
-      no_log: true
 
     - name: Login to OpenShift
       ansible.builtin.command:
@@ -35,10 +43,11 @@
       changed_when: false
       no_log: true
 
-    - name: Log OpenShift authentication
+    - name: Log authentication result
       ansible.builtin.shell:
         cmd: |
-          ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] OpenShift authentication: PASSED' >> '{{ bastion_log }}'"
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenShift authentication: PASSED" >> "{{ validation_log }}"
+      delegate_to: bastion
       no_log: true
 
     - name: Get ClusterVersion
@@ -54,202 +63,17 @@
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] CLUSTERVERSION"
             echo "----------------------------------------"
-            oc get clusterversion
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get ClusterOperators
-      ansible.builtin.command:
-        cmd: oc get clusteroperators -o json
-      register: cluster_operators
-      changed_when: false
-
-    - name: Log ClusterOperators
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] CLUSTEROPERATORS"
-            echo "----------------------------------------"
-            oc get clusteroperators
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get MachineConfigPools
-      ansible.builtin.command:
-        cmd: oc get machineconfigpools -o json
-      register: machine_config_pools
-      changed_when: false
-
-    - name: Log MachineConfigPools
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] MACHINECONFIGPOOLS"
-            echo "----------------------------------------"
-            oc get mcp
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get Nodes
-      ansible.builtin.command:
-        cmd: oc get nodes -o json
-      register: cluster_nodes
-      changed_when: false
-
-    - name: Log Nodes
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] NODES"
-            echo "----------------------------------------"
-            oc get nodes
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get CSRs
-      ansible.builtin.command:
-        cmd: oc get csr -o json
-      register: csrs
-      changed_when: false
-
-    - name: Log CSRs
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSRs"
-            echo "----------------------------------------"
-            oc get csr
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get all Pods
-      ansible.builtin.command:
-        cmd: oc get pods -A -o json
-      register: all_pods
-      changed_when: false
-
-    - name: Log Pods
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] PODS"
-            echo "----------------------------------------"
-            oc get pods -A
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get Infrastructure
-      ansible.builtin.command:
-        cmd: oc get infrastructure cluster -o json
-      register: infrastructure
-      changed_when: false
-
-    - name: Log Infrastructure
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFRASTRUCTURE"
-            echo "----------------------------------------"
-            oc get infrastructure cluster
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get DNS
-      ansible.builtin.command:
-        cmd: oc get dns cluster -o json
-      register: dns
-      changed_when: false
-
-    - name: Log DNS
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] DNS"
-            echo "----------------------------------------"
-            oc get dns cluster
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get Network
-      ansible.builtin.command:
-        cmd: oc get network cluster -o json
-      register: network
-      changed_when: false
-
-    - name: Log Network
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] NETWORK"
-            echo "----------------------------------------"
-            oc get network cluster
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get Ingress
-      ansible.builtin.command:
-        cmd: oc get ingresscontroller -n openshift-ingress-operator -o json
-      register: ingress
-      changed_when: false
-
-    - name: Log Ingress
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] INGRESS"
-            echo "----------------------------------------"
-            oc get ingresscontroller -n openshift-ingress-operator
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
-      no_log: true
-
-    - name: Get Authentication
-      ansible.builtin.command:
-        cmd: oc get clusteroperator authentication -o json
-      register: authentication
-      changed_when: false
-
-    - name: Get Console
-      ansible.builtin.command:
-        cmd: oc get clusteroperator console -o json
-      register: console
-      changed_when: false
-
-    - name: Get StorageClasses
-      ansible.builtin.command:
-        cmd: oc get storageclass -o json
-      register: storage_classes
-      changed_when: false
-
-    - name: Check API health
-      ansible.builtin.command:
-        cmd: oc get --raw=/readyz
-      register: api_health
-      changed_when: false
-
-    - name: Log API health
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo ""
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] API HEALTH"
-            echo "----------------------------------------"
-            oc get --raw=/readyz
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
+            cat <<'EOF'
+          {{ cluster_version.stdout }}
+          EOF
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
       no_log: true
 
     - name: Validate ClusterVersion
       block:
 
-        - name: Validate ClusterVersion
+        - name: Validate ClusterVersion conditions
           ansible.builtin.assert:
             that:
               - >
@@ -268,10 +92,11 @@
                 | map(attribute='status')
                 | first == 'False'
 
-        - name: Log ClusterVersion result
+        - name: Log ClusterVersion validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] ClusterVersion validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterVersion validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -279,17 +104,36 @@
         - name: Log ClusterVersion failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] ClusterVersion validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterVersion validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail ClusterVersion validation
           ansible.builtin.fail:
             msg: "ClusterVersion validation FAILED."
 
+    - name: Get ClusterOperators
+      ansible.builtin.command:
+        cmd: oc get clusteroperators -o json
+      register: cluster_operators
+      changed_when: false
+
+    - name: Log ClusterOperators
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] CLUSTEROPERATORS"
+            echo "----------------------------------------"
+            oc get clusteroperators
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
     - name: Validate ClusterOperators
       block:
 
-        - name: Validate ClusterOperators
+        - name: Validate ClusterOperator conditions
           ansible.builtin.assert:
             that:
               - >
@@ -308,14 +152,15 @@
                 | map(attribute='status')
                 | first == 'False'
             fail_msg: "ClusterOperator {{ item.metadata.name }} validation FAILED."
-          loop: "{{ (cluster_operators.stdout | from_json)['items'] }}"
+          loop: "{{ (cluster_operators.stdout | from_json).items }}"
           loop_control:
             label: "{{ item.metadata.name }}"
 
-        - name: Log ClusterOperators result
+        - name: Log ClusterOperators validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -323,17 +168,36 @@
         - name: Log ClusterOperators failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ClusterOperators validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail ClusterOperators validation
           ansible.builtin.fail:
             msg: "ClusterOperators validation FAILED."
 
+    - name: Get MachineConfigPools
+      ansible.builtin.command:
+        cmd: oc get mcp -o json
+      register: machine_config_pools
+      changed_when: false
+
+    - name: Log MachineConfigPools
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] MACHINECONFIGPOOLS"
+            echo "----------------------------------------"
+            oc get mcp
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
     - name: Validate MachineConfigPools
       block:
 
-        - name: Validate MachineConfigPools
+        - name: Validate MCP conditions
           ansible.builtin.assert:
             that:
               - >
@@ -352,14 +216,15 @@
                 | map(attribute='status')
                 | first == 'False'
             fail_msg: "MachineConfigPool {{ item.metadata.name }} validation FAILED."
-          loop: "{{ (machine_config_pools.stdout | from_json)['items'] }}"
+          loop: "{{ (machine_config_pools.stdout | from_json).items }}"
           loop_control:
             label: "{{ item.metadata.name }}"
 
-        - name: Log MCP result
+        - name: Log MCP validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] MachineConfigPools validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] MachineConfigPools validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -367,17 +232,36 @@
         - name: Log MCP failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] MachineConfigPools validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] MachineConfigPools validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail MCP validation
           ansible.builtin.fail:
             msg: "MachineConfigPool validation FAILED."
 
+    - name: Get Nodes
+      ansible.builtin.command:
+        cmd: oc get nodes -o json
+      register: cluster_nodes
+      changed_when: false
+
+    - name: Log Nodes
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] NODES"
+            echo "----------------------------------------"
+            oc get nodes -o wide
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
     - name: Validate Nodes
       block:
 
-        - name: Validate Nodes
+        - name: Validate node readiness
           ansible.builtin.assert:
             that:
               - >
@@ -386,50 +270,71 @@
                 | map(attribute='status')
                 | first == 'True'
             fail_msg: "Node {{ item.metadata.name }} is NOT Ready."
-          loop: "{{ (cluster_nodes.stdout | from_json)['items'] }}"
+          loop: "{{ (cluster_nodes.stdout | from_json).items }}"
           loop_control:
             label: "{{ item.metadata.name }}"
 
-        - name: Log Nodes result
+        - name: Log node validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Node validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Node validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
 
-        - name: Log Nodes failure
+        - name: Log node failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Node validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Node validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
-        - name: Fail Node validation
+        - name: Fail node validation
           ansible.builtin.fail:
             msg: "Node validation FAILED."
+
+    - name: Get CSRs
+      ansible.builtin.command:
+        cmd: oc get csr -o json
+      register: csrs
+      changed_when: false
 
     - name: Find pending CSRs
       ansible.builtin.set_fact:
         pending_csrs: >-
           {{
-            (csrs.stdout | from_json)['items']
+            (csrs.stdout | from_json).items
             | selectattr('status.certificate', 'undefined')
             | list
           }}
 
+    - name: Log CSRs
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSRs"
+            echo "----------------------------------------"
+            oc get csr
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
     - name: Validate CSRs
       block:
 
-        - name: Validate CSRs
+        - name: Validate pending CSRs
           ansible.builtin.assert:
             that:
               - pending_csrs | length == 0
             fail_msg: "CSR validation FAILED. Pending CSR(s) found."
 
-        - name: Log CSR result
+        - name: Log CSR validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] CSR validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSR validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -440,53 +345,78 @@
               {
                 echo "[$(date '+%Y-%m-%d %H:%M:%S')] CSR validation: FAILED"
                 echo "Pending CSR count: {{ pending_csrs | length }}"
-                oc get csr
-              } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
+              } >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail CSR validation
           ansible.builtin.fail:
             msg: "CSR validation FAILED."
 
+    - name: Get all Pods
+      ansible.builtin.command:
+        cmd: oc get pods -A -o json
+      register: all_pods
+      changed_when: false
+
     - name: Find unhealthy Pods
       ansible.builtin.set_fact:
         unhealthy_pods: >-
           {{
-            (all_pods.stdout | from_json)['items']
+            (all_pods.stdout | from_json).items
             | selectattr('status.phase', 'defined')
             | rejectattr('status.phase', 'equalto', 'Running')
             | rejectattr('status.phase', 'equalto', 'Succeeded')
-            | rejectattr('status.phase', 'equalto', 'Completed')
             | list
           }}
 
-    - name: Log Pod validation details
+    - name: Find Pods with unhealthy containers
+      ansible.builtin.set_fact:
+        container_unhealthy_pods: >-
+          {{
+            (all_pods.stdout | from_json).items
+            | selectattr('status.containerStatuses', 'defined')
+            | selectattr(
+                'status.containerStatuses'
+                | map(attribute='ready')
+                | select('equalto', false)
+                | list
+                | length,
+                '>',
+                0
+              )
+            | list
+          }}
+
+    - name: Log Pods
       ansible.builtin.shell:
         cmd: |
           {
             echo ""
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] POD VALIDATION"
             echo "----------------------------------------"
-            echo "Unhealthy pod count: {{ unhealthy_pods | length }}"
-            {% for pod in unhealthy_pods %}
-            echo "Namespace: {{ pod.metadata.namespace }} | Pod: {{ pod.metadata.name }} | Phase: {{ pod.status.phase }}"
-            {% endfor %}
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
+            echo "Non-running pod count: {{ unhealthy_pods | length }}"
+            echo "Pods with unready containers: {{ container_unhealthy_pods | length }}"
+            oc get pods -A
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
       no_log: true
 
     - name: Validate Pods
       block:
 
-        - name: Validate Pods
+        - name: Validate Pod health
           ansible.builtin.assert:
             that:
               - unhealthy_pods | length == 0
+              - container_unhealthy_pods | length == 0
             fail_msg: "Pod validation FAILED. Unhealthy pod(s) found."
 
-        - name: Log Pod result
+        - name: Log Pod validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Pod validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pod validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -494,26 +424,168 @@
         - name: Log Pod failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Pod validation: FAILED' >> '{{ bastion_log }}'"
+              {
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pod validation: FAILED"
+                echo "Non-running pods: {{ unhealthy_pods | length }}"
+                echo "Pods with unready containers: {{ container_unhealthy_pods | length }}"
+              } >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail Pod validation
           ansible.builtin.fail:
             msg: "Pod validation FAILED. Unhealthy pod(s) found."
 
-    - name: Validate API Health
+    - name: Get Infrastructure
+      ansible.builtin.command:
+        cmd: oc get infrastructure cluster
+      register: infrastructure
+      changed_when: false
+
+    - name: Log Infrastructure
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFRASTRUCTURE"
+            echo "----------------------------------------"
+            echo "{{ infrastructure.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Get DNS
+      ansible.builtin.command:
+        cmd: oc get dns cluster
+      register: dns
+      changed_when: false
+
+    - name: Log DNS
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] DNS"
+            echo "----------------------------------------"
+            echo "{{ dns.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Get Network
+      ansible.builtin.command:
+        cmd: oc get network cluster
+      register: network
+      changed_when: false
+
+    - name: Log Network
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] NETWORK"
+            echo "----------------------------------------"
+            echo "{{ network.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Get Ingress
+      ansible.builtin.command:
+        cmd: oc get ingresscontroller -n openshift-ingress-operator
+      register: ingress
+      changed_when: false
+
+    - name: Log Ingress
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] INGRESS"
+            echo "----------------------------------------"
+            echo "{{ ingress.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Get Authentication
+      ansible.builtin.command:
+        cmd: oc get clusteroperator authentication
+      register: authentication
+      changed_when: false
+
+    - name: Get Console
+      ansible.builtin.command:
+        cmd: oc get clusteroperator console
+      register: console
+      changed_when: false
+
+    - name: Log Authentication and Console
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTHENTICATION"
+            echo "----------------------------------------"
+            echo "{{ authentication.stdout }}"
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] CONSOLE"
+            echo "----------------------------------------"
+            echo "{{ console.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Get StorageClasses
+      ansible.builtin.command:
+        cmd: oc get storageclass
+      register: storage_classes
+      changed_when: false
+
+    - name: Log StorageClasses
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] STORAGECLASSES"
+            echo "----------------------------------------"
+            echo "{{ storage_classes.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Check API health
+      ansible.builtin.command:
+        cmd: oc get --raw=/readyz
+      register: api_health
+      changed_when: false
+
+    - name: Log API health
+      ansible.builtin.shell:
+        cmd: |
+          {
+            echo ""
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] API HEALTH"
+            echo "----------------------------------------"
+            echo "{{ api_health.stdout }}"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
+      no_log: true
+
+    - name: Validate API health
       block:
 
-        - name: Validate API Health
+        - name: Validate API ready
           ansible.builtin.assert:
             that:
               - api_health.rc == 0
               - "'ok' in api_health.stdout"
 
-        - name: Log API result
+        - name: Log API validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] API health validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] API health validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -521,34 +593,42 @@
         - name: Log API failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] API health validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] API health validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail API validation
           ansible.builtin.fail:
             msg: "API health validation FAILED."
 
-    - name: Validate Authentication
+    - name: Validate Authentication operator
       block:
 
         - name: Validate Authentication
+          ansible.builtin.command:
+            cmd: oc get clusteroperator authentication -o json
+          register: authentication_json
+          changed_when: false
+
+        - name: Assert Authentication
           ansible.builtin.assert:
             that:
               - >
-                ((authentication.stdout | from_json).status.conditions
+                (authentication_json.stdout | from_json).status.conditions
                 | selectattr('type', 'equalto', 'Available')
                 | map(attribute='status')
-                | first) == 'True'
+                | first == 'True'
               - >
-                ((authentication.stdout | from_json).status.conditions
+                (authentication_json.stdout | from_json).status.conditions
                 | selectattr('type', 'equalto', 'Degraded')
                 | map(attribute='status')
-                | first) == 'False'
+                | first == 'False'
 
-        - name: Log Authentication result
+        - name: Log Authentication validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Authentication validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Authentication validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -556,34 +636,42 @@
         - name: Log Authentication failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Authentication validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Authentication validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail Authentication validation
           ansible.builtin.fail:
             msg: "Authentication validation FAILED."
 
-    - name: Validate Console
+    - name: Validate Console operator
       block:
 
         - name: Validate Console
+          ansible.builtin.command:
+            cmd: oc get clusteroperator console -o json
+          register: console_json
+          changed_when: false
+
+        - name: Assert Console
           ansible.builtin.assert:
             that:
               - >
-                ((console.stdout | from_json).status.conditions
+                (console_json.stdout | from_json).status.conditions
                 | selectattr('type', 'equalto', 'Available')
                 | map(attribute='status')
-                | first) == 'True'
+                | first == 'True'
               - >
-                ((console.stdout | from_json).status.conditions
+                (console_json.stdout | from_json).status.conditions
                 | selectattr('type', 'equalto', 'Degraded')
                 | map(attribute='status')
-                | first) == 'False'
+                | first == 'False'
 
-        - name: Log Console result
+        - name: Log Console validation
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Console validation: PASSED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Console validation: PASSED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
       rescue:
@@ -591,130 +679,26 @@
         - name: Log Console failure
           ansible.builtin.shell:
             cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Console validation: FAILED' >> '{{ bastion_log }}'"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Console validation: FAILED" >> "{{ validation_log }}"
+          delegate_to: bastion
           no_log: true
 
         - name: Fail Console validation
           ansible.builtin.fail:
             msg: "Console validation FAILED."
 
-    - name: Validate DNS
-      block:
-
-        - name: Validate DNS
-          ansible.builtin.assert:
-            that:
-              - >
-                ((dns.stdout | from_json).status.clusterDomain | default(''))
-                | length > 0
-
-        - name: Log DNS result
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] DNS validation: PASSED' >> '{{ bastion_log }}'"
-          no_log: true
-
-      rescue:
-
-        - name: Log DNS failure
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] DNS validation: FAILED' >> '{{ bastion_log }}'"
-          no_log: true
-
-        - name: Fail DNS validation
-          ansible.builtin.fail:
-            msg: "DNS validation FAILED."
-
-    - name: Validate Network
-      block:
-
-        - name: Validate Network
-          ansible.builtin.assert:
-            that:
-              - >
-                ((network.stdout | from_json).status.clusterNetwork | default([]))
-                | length > 0
-
-        - name: Log Network result
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Network validation: PASSED' >> '{{ bastion_log }}'"
-          no_log: true
-
-      rescue:
-
-        - name: Log Network failure
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Network validation: FAILED' >> '{{ bastion_log }}'"
-          no_log: true
-
-        - name: Fail Network validation
-          ansible.builtin.fail:
-            msg: "Network validation FAILED."
-
-    - name: Validate Ingress
-      block:
-
-        - name: Validate Ingress
-          ansible.builtin.assert:
-            that:
-              - >
-                (ingress.stdout | from_json)['items'] | length > 0
-
-        - name: Log Ingress result
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Ingress validation: PASSED' >> '{{ bastion_log }}'"
-          no_log: true
-
-      rescue:
-
-        - name: Log Ingress failure
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Ingress validation: FAILED' >> '{{ bastion_log }}'"
-          no_log: true
-
-        - name: Fail Ingress validation
-          ansible.builtin.fail:
-            msg: "Ingress validation FAILED."
-
-    - name: Validate StorageClasses
-      block:
-
-        - name: Validate StorageClasses
-          ansible.builtin.assert:
-            that:
-              - >
-                (storage_classes.stdout | from_json)['items'] | length > 0
-
-        - name: Log Storage result
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Storage validation: PASSED' >> '{{ bastion_log }}'"
-          no_log: true
-
-      rescue:
-
-        - name: Log Storage failure
-          ansible.builtin.shell:
-            cmd: |
-              ssh root@bastion.ocp.manohar.in "echo '[\$(date '+%Y-%m-%d %H:%M:%S')] Storage validation: FAILED' >> '{{ bastion_log }}'"
-          no_log: true
-
-        - name: Fail Storage validation
-          ansible.builtin.fail:
-            msg: "Storage validation FAILED."
-
-    - name: Log successful completion
+    - name: Log validation completion
       ansible.builtin.shell:
         cmd: |
           {
             echo ""
             echo "============================================================"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] POST-UPGRADE VALIDATION PASSED"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] POST-UPGRADE VALIDATION COMPLETED"
             echo "============================================================"
-          } | ssh root@bastion.ocp.manohar.in "cat >> '{{ bastion_log }}'"
+          } >> "{{ validation_log }}"
+      delegate_to: bastion
       no_log: true
+
+    - name: Display validation log location
+      ansible.builtin.debug:
+        msg: "Post-upgrade validation log: {{ validation_log }}"
