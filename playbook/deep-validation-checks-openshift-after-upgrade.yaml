@@ -5,30 +5,24 @@
   gather_facts: true
 
   vars:
-    validation_log: "/tmp/openshift-post-upgrade-validation-{{ ansible_date_time.date }}_{{ ansible_date_time.time | replace(':', '-') }}.log"
+    validation_log: "/tmp/openshift-post-upgrade-validation-{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}.log"
 
   tasks:
 
     - name: Initialize validation log on bastion
-      ansible.builtin.copy:
-        dest: "{{ validation_log }}"
-        mode: "0644"
-        content: |
+      ansible.builtin.shell:
+        cmd: |
+          cat > "{{ validation_log }}" <<EOF
           ============================================================
                   OPENSHIFT POST-UPGRADE VALIDATION
           ============================================================
-      delegate_to: bastion
-
-    - name: Log validation start
-      ansible.builtin.shell:
-        cmd: |
-          {
-            echo "Start Date      : $(date '+%Y-%m-%d')"
-            echo "Start Time      : $(date '+%H:%M:%S')"
-            echo "Start Timestamp : $(date -Iseconds)"
-            echo "============================================================"
-            echo ""
-          } >> "{{ validation_log }}"
+          Start Date      : $(date '+%Y-%m-%d')
+          Start Time      : $(date '+%H:%M:%S')
+          Start Timestamp : $(date -Iseconds)
+          ============================================================
+          VALIDATION STARTED
+          ============================================================
+          EOF
       delegate_to: bastion
 
     - name: Login to OpenShift
