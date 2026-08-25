@@ -1,69 +1,54 @@
 ---
-- name: OpenShift Cluster SOS Report
+- name: Generate SOS Report for OpenShift Node
   hosts: all
   gather_facts: false
 
   vars:
-    sos_report_dir: "/tmp/sos-report-{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    sos_report_dir: "/tmp/sos-reports"
 
   tasks:
 
-    - name: Verify OpenShift access
+    - name: Get OpenShift node name
       ansible.builtin.command:
-        cmd: oc whoami
-      register: oc_user
+        cmd: oc get nodes -o jsonpath='{.items[0].metadata.name}'
+      register: node_name
       changed_when: false
 
-    - name: Verify cluster access
-      ansible.builtin.command:
-        cmd: oc get clusterversion
-      register: cluster_version
-      changed_when: false
-
-    - name: Create SOS report directory
+    - name: Create SOS report directory on bastion
       ansible.builtin.file:
         path: "{{ sos_report_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Run OpenShift diagnostic collection
+    - name: Generate SOS report on OpenShift node
       ansible.builtin.command:
         cmd: >
-          oc adm inspect clusteroperators
-          --dest-dir="{{ sos_report_dir }}"
+          oc debug node/{{ node_name.stdout }} --
+          chroot /host
+          sos report
+          --batch
       register: sos_report
       changed_when: true
 
-    - name: Collect cluster resources
-      ansible.builtin.command:
+    - name: Find generated SOS report
+      ansible.builtin.shell:
         cmd: >
-          oc adm inspect nodes
-          --dest-dir="{{ sos_report_dir }}"
-      register: cluster_resources
+          oc debug node/{{ node_name.stdout }} --
+          chroot /host
+          find /var/tmp -maxdepth 1 -type f -name 'sosreport-*'
+      register: sos_files
+      changed_when: false
+
+    - name: Copy SOS report from node to bastion
+      ansible.builtin.shell:
+        cmd: |
+          oc debug node/{{ node_name.stdout }} -- \
+            chroot /host \
+            cat "{{ item }}" > "{{ sos_report_dir }}/{{ item | basename }}"
+      loop: "{{ sos_files.stdout_lines }}"
+      when: sos_files.stdout_lines | length > 0
       changed_when: true
 
-    - name: Verify diagnostic output
-      ansible.builtin.find:
-        paths: "{{ sos_report_dir }}"
-        recurse: true
-      register: report_files
-
-    - name: Fail when diagnostic output is empty
-      ansible.builtin.fail:
-        msg: "Diagnostic collection did not produce any data."
-      when: report_files.matched | int == 0
-
-    - name: Create SOS report archive
-      ansible.builtin.command:
-        cmd: >
-          tar -czf "{{ sos_report_dir }}.tar.gz"
-          -C "{{ sos_report_dir | dirname }}"
-          "{{ sos_report_dir | basename }}"
-      changed_when: true
-
-    - name: Report SOS report result
+    - name: Display SOS report location
       ansible.builtin.debug:
-        msg:
-          - "Cluster: {{ cluster_version.stdout }}"
-          - "Authenticated user: {{ oc_user.stdout }}"
-          - "SOS report: {{ sos_report_dir }}.tar.gz"
+        msg: "SOS report saved on bastion: {{ sos_report_dir }}"
