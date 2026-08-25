@@ -1,18 +1,13 @@
 ---
-- name: Generate SOS Report for OpenShift Node
+- name: Generate SOS Report and Save on Bastion
   hosts: all
   gather_facts: false
 
   vars:
     sos_report_dir: "/tmp/sos-reports"
+    node_name: "{{ target_node | default(lookup('pipe', 'oc get nodes -o jsonpath=\"{.items[0].metadata.name}\"')) }}"
 
   tasks:
-
-    - name: Get OpenShift node name
-      ansible.builtin.command:
-        cmd: oc get nodes -o jsonpath='{.items[0].metadata.name}'
-      register: node_name
-      changed_when: false
 
     - name: Create SOS report directory on bastion
       ansible.builtin.file:
@@ -21,26 +16,46 @@
         mode: "0755"
 
     - name: Generate SOS report on OpenShift node
-      ansible.builtin.command:
-        cmd: >
-          oc debug node/{{ node_name.stdout }}
-          -- bash -c
-          "chroot /host toolbox sos report
-          -e openshift
-          -e openshift_ovn
-          -e openvswitch
-          -e podman
-          -e crio
-          -k crio.all=on
-          -k crio.logs=on
-          -k podman.all=on
-          -k podman.logs=on
-          -k networking.ethtool-namespaces=off
-          --all-logs
-          --plugin-timeout=600"
+      ansible.builtin.shell: |
+        oc debug node/{{ node_name }} -- bash -c '
+          chroot /host bash -c "
+            toolbox sos report
+          "
+        '
       register: sos_report
       changed_when: true
 
-    - name: Display SOS report output
+    - name: Get SOS report filename from node
+      ansible.builtin.shell: |
+        oc debug node/{{ node_name }} -- \
+          chroot /host \
+          find /var/tmp -maxdepth 1 -type f -name "sosreport-*.tar.xz" \
+          -printf "%f\n" | tail -1
+      register: sos_filename
+      changed_when: false
+
+    - name: Verify SOS report exists
+      ansible.builtin.fail:
+        msg: "SOS report was not found on node {{ node_name }}"
+      when: sos_filename.stdout | trim == ""
+
+    - name: Copy SOS report from node to bastion
+      ansible.builtin.shell: |
+        oc debug node/{{ node_name }} -- \
+          chroot /host \
+          cat "/var/tmp/{{ sos_filename.stdout | trim }}" \
+          > "{{ sos_report_dir }}/{{ sos_filename.stdout | trim }}"
+      register: sos_copy
+      changed_when: true
+
+    - name: Verify SOS report on bastion
+      ansible.builtin.stat:
+        path: "{{ sos_report_dir }}/{{ sos_filename.stdout | trim }}"
+      register: sos_file
+
+    - name: Display SOS report location
       ansible.builtin.debug:
-        var: sos_report.stdout_lines
+        msg:
+          - "Node: {{ node_name }}"
+          - "SOS report: {{ sos_report_dir }}/{{ sos_filename.stdout | trim }}"
+          - "Size: {{ sos_file.stat.size }} bytes"
