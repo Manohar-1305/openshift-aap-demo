@@ -20,17 +20,27 @@
         state: directory
         mode: "0755"
 
-    - name: Generate SOS report
+    - name: Generate SOS report on OpenShift node
       ansible.builtin.command:
         cmd: >
           oc debug node/{{ node_name.stdout }}
-          --image=registry.redhat.io/rhel9/support-tools
-          -- chroot /host
-          sos report
-          --batch
+          -- bash -c
+          "chroot /host toolbox sos report
+          -e openshift
+          -e openshift_ovn
+          -e openvswitch
+          -e podman
+          -e crio
+          -k crio.all=on
+          -k crio.logs=on
+          -k podman.all=on
+          -k podman.logs=on
+          -k networking.ethtool-namespaces=off
+          --all-logs
+          --plugin-timeout=600"
       register: sos_report
       changed_when: true
 
-    - name: Display SOS report result
+    - name: Display SOS report output
       ansible.builtin.debug:
         var: sos_report.stdout_lines
