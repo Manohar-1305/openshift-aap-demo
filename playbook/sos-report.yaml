@@ -1,0 +1,68 @@
+---
+- name: Generate SOS report from OpenShift cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    sos_report_dir: "/tmp/openshift-sos-reports"
+
+  tasks:
+
+    - name: Create local SOS report directory
+      ansible.builtin.file:
+        path: "{{ sos_report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Get OpenShift nodes
+      ansible.builtin.command:
+        cmd: oc get nodes -o jsonpath='{.items[*].metadata.name}'
+      register: oc_nodes
+      changed_when: false
+
+    - name: Generate SOS report on each node
+      ansible.builtin.command:
+        cmd: >
+          oc debug node/{{ item }}
+          -- chroot /host
+          sos report --batch
+      loop: "{{ oc_nodes.stdout.split() }}"
+      register: sos_reports
+      changed_when: true
+
+    - name: Extract SOS report path from output
+      ansible.builtin.set_fact:
+        sos_paths: >-
+          {{
+            sos_reports.results
+            | map(attribute='stdout')
+            | map('regex_search', '/var/tmp/sosreport-[^\\s]+\\.tar\\.xz')
+            | select('string')
+            | list
+          }}
+
+    - name: Copy SOS reports from nodes to bastion
+      ansible.builtin.command:
+        cmd: >
+          oc debug node/{{ item }}
+          -- bash -c
+          "cat {{ sos_path }} > /host{{ sos_report_dir }}/{{ item }}-{{ sos_path | basename }}"
+      loop: "{{ oc_nodes.stdout.split() }}"
+      loop_control:
+        index_var: node_index
+      vars:
+        sos_path: "{{ sos_reports.results[node_index].stdout | regex_search('/var/tmp/sosreport-[^\\s]+\\.tar\\.xz') }}"
+      when: sos_path is not none
+      changed_when: true
+
+    - name: List collected SOS reports
+      ansible.builtin.find:
+        paths: "{{ sos_report_dir }}"
+        patterns: "*.tar.xz"
+      register: collected_reports
+
+    - name: Display collected SOS reports
+      ansible.builtin.debug:
+        msg: "{{ item.path }}"
+      loop: "{{ collected_reports.files }}"
