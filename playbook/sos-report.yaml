@@ -1,68 +1,68 @@
 ---
-- name: Generate SOS report from OpenShift cluster
-  hosts: localhost
-  connection: local
+- name: OpenShift Cluster SOS Report
+  hosts: all
   gather_facts: false
 
   vars:
-    sos_report_dir: "/tmp/openshift-sos-reports"
+    sos_report_dir: "/tmp/sos-report-{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
 
   tasks:
 
-    - name: Create local SOS report directory
+    - name: Verify OpenShift access
+      ansible.builtin.command:
+        cmd: oc whoami
+      register: oc_user
+      changed_when: false
+
+    - name: Verify cluster access
+      ansible.builtin.command:
+        cmd: oc get clusterversion
+      register: cluster_version
+      changed_when: false
+
+    - name: Create SOS report directory
       ansible.builtin.file:
         path: "{{ sos_report_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Get OpenShift nodes
-      ansible.builtin.command:
-        cmd: oc get nodes -o jsonpath='{.items[*].metadata.name}'
-      register: oc_nodes
-      changed_when: false
-
-    - name: Generate SOS report on each node
+    - name: Run OpenShift SOS report
       ansible.builtin.command:
         cmd: >
-          oc debug node/{{ item }}
-          -- chroot /host
-          sos report --batch
-      loop: "{{ oc_nodes.stdout.split() }}"
-      register: sos_reports
+          oc adm inspect clusteroperators
+          --dest-dir="{{ sos_report_dir }}"
+      register: sos_report
       changed_when: true
 
-    - name: Extract SOS report path from output
-      ansible.builtin.set_fact:
-        sos_paths: >-
-          {{
-            sos_reports.results
-            | map(attribute='stdout')
-            | map('regex_search', '/var/tmp/sosreport-[^\\s]+\\.tar\\.xz')
-            | select('string')
-            | list
-          }}
-
-    - name: Copy SOS reports from nodes to bastion
+    - name: Collect cluster resources
       ansible.builtin.command:
         cmd: >
-          oc debug node/{{ item }}
-          -- bash -c
-          "cat {{ sos_path }} > /host{{ sos_report_dir }}/{{ item }}-{{ sos_path | basename }}"
-      loop: "{{ oc_nodes.stdout.split() }}"
-      loop_control:
-        index_var: node_index
-      vars:
-        sos_path: "{{ sos_reports.results[node_index].stdout | regex_search('/var/tmp/sosreport-[^\\s]+\\.tar\\.xz') }}"
-      when: sos_path is not none
+          oc adm inspect clusteroperators
+          nodes
+          --dest-dir="{{ sos_report_dir }}"
+      register: cluster_resources
       changed_when: true
 
-    - name: List collected SOS reports
+    - name: Verify SOS report output
       ansible.builtin.find:
         paths: "{{ sos_report_dir }}"
-        patterns: "*.tar.xz"
-      register: collected_reports
+        recurse: true
+      register: report_files
 
-    - name: Display collected SOS reports
+    - name: Fail when SOS report is empty
+      ansible.builtin.fail:
+        msg: "SOS report did not produce diagnostic data."
+      when: report_files.matched | int == 0
+
+    - name: Create SOS report archive
+      community.general.archive:
+        path: "{{ sos_report_dir }}"
+        dest: "{{ sos_report_dir }}.tar.gz"
+        format: gz
+
+    - name: Report SOS report result
       ansible.builtin.debug:
-        msg: "{{ item.path }}"
-      loop: "{{ collected_reports.files }}"
+        msg:
+          - "Cluster: {{ cluster_version.stdout }}"
+          - "Authenticated user: {{ oc_user.stdout }}"
+          - "SOS report: {{ sos_report_dir }}.tar.gz"
