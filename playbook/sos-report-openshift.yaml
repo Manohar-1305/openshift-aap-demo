@@ -1,0 +1,39 @@
+---
+- name: Generate SOS report from OpenShift cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    sos_report_dir: "/tmp/openshift-sos-report"
+
+  tasks:
+
+    - name: Create SOS report directory on bastion
+      ansible.builtin.file:
+        path: "{{ sos_report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Get OpenShift nodes
+      ansible.builtin.command:
+        cmd: oc get nodes -o jsonpath='{.items[*].metadata.name}'
+      register: oc_nodes
+      changed_when: false
+
+    - name: Generate SOS report on each OpenShift node
+      ansible.builtin.command:
+        cmd: >
+          oc debug node/{{ item }}
+          -- chroot /host
+          sos report
+          --batch
+      loop: "{{ oc_nodes.stdout.split() }}"
+      register: sos_reports
+      changed_when: true
+
+    - name: Display SOS report locations
+      ansible.builtin.debug:
+        msg: "{{ item.stdout_lines }}"
+      loop: "{{ sos_reports.results }}"
+      when: item.stdout_lines is defined
