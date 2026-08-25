@@ -26,7 +26,7 @@
         state: directory
         mode: "0755"
 
-    - name: Run OpenShift SOS report
+    - name: Run OpenShift diagnostic collection
       ansible.builtin.command:
         cmd: >
           oc adm inspect clusteroperators
@@ -37,28 +37,29 @@
     - name: Collect cluster resources
       ansible.builtin.command:
         cmd: >
-          oc adm inspect clusteroperators
-          nodes
+          oc adm inspect nodes
           --dest-dir="{{ sos_report_dir }}"
       register: cluster_resources
       changed_when: true
 
-    - name: Verify SOS report output
+    - name: Verify diagnostic output
       ansible.builtin.find:
         paths: "{{ sos_report_dir }}"
         recurse: true
       register: report_files
 
-    - name: Fail when SOS report is empty
+    - name: Fail when diagnostic output is empty
       ansible.builtin.fail:
-        msg: "SOS report did not produce diagnostic data."
+        msg: "Diagnostic collection did not produce any data."
       when: report_files.matched | int == 0
 
     - name: Create SOS report archive
-      community.general.archive:
-        path: "{{ sos_report_dir }}"
-        dest: "{{ sos_report_dir }}.tar.gz"
-        format: gz
+      ansible.builtin.command:
+        cmd: >
+          tar -czf "{{ sos_report_dir }}.tar.gz"
+          -C "{{ sos_report_dir | dirname }}"
+          "{{ sos_report_dir | basename }}"
+      changed_when: true
 
     - name: Report SOS report result
       ansible.builtin.debug:
