@@ -22,11 +22,7 @@
 
     - name: Generate SOS report on OpenShift node
       ansible.builtin.shell: |
-        oc debug node/{{ node_name.stdout }} -- bash -c '
-          chroot /host bash -c "
-            toolbox sos report --batch
-          "
-        '
+        oc debug node/{{ node_name.stdout }} -- chroot /host toolbox sos report --batch
       register: sos_report
       changed_when: true
 
@@ -62,8 +58,7 @@
       ansible.builtin.fail:
         msg: "SOS report was not copied to the bastion."
       when:
-        - not sos_file.stat.exists
-        - sos_file.stat.size | int == 0
+        - not sos_file.stat.exists or sos_file.stat.size | int == 0
 
     - name: Display SOS report location
       ansible.builtin.debug:
