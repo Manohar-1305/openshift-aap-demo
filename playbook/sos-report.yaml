@@ -5,9 +5,14 @@
 
   vars:
     sos_report_dir: "/tmp/sos-reports"
-    node_name: "{{ target_node | default(lookup('pipe', 'oc get nodes -o jsonpath=\"{.items[0].metadata.name}\"')) }}"
 
   tasks:
+
+    - name: Get OpenShift node name
+      ansible.builtin.command:
+        cmd: oc get nodes -o jsonpath='{.items[0].metadata.name}'
+      register: node_name
+      changed_when: false
 
     - name: Create SOS report directory on bastion
       ansible.builtin.file:
@@ -17,7 +22,7 @@
 
     - name: Generate SOS report on OpenShift node
       ansible.builtin.shell: |
-        oc debug node/{{ node_name }} -- bash -c '
+        oc debug node/{{ node_name.stdout }} -- bash -c '
           chroot /host bash -c "
             toolbox sos report
           "
@@ -25,9 +30,9 @@
       register: sos_report
       changed_when: true
 
-    - name: Get SOS report filename from node
+    - name: Get SOS report filename
       ansible.builtin.shell: |
-        oc debug node/{{ node_name }} -- \
+        oc debug node/{{ node_name.stdout }} -- \
           chroot /host \
           find /var/tmp -maxdepth 1 -type f -name "sosreport-*.tar.xz" \
           -printf "%f\n" | tail -1
@@ -36,12 +41,12 @@
 
     - name: Verify SOS report exists
       ansible.builtin.fail:
-        msg: "SOS report was not found on node {{ node_name }}"
+        msg: "SOS report was not found on node {{ node_name.stdout }}"
       when: sos_filename.stdout | trim == ""
 
-    - name: Copy SOS report from node to bastion
+    - name: Copy SOS report to bastion
       ansible.builtin.shell: |
-        oc debug node/{{ node_name }} -- \
+        oc debug node/{{ node_name.stdout }} -- \
           chroot /host \
           cat "/var/tmp/{{ sos_filename.stdout | trim }}" \
           > "{{ sos_report_dir }}/{{ sos_filename.stdout | trim }}"
@@ -56,6 +61,6 @@
     - name: Display SOS report location
       ansible.builtin.debug:
         msg:
-          - "Node: {{ node_name }}"
+          - "Node: {{ node_name.stdout }}"
           - "SOS report: {{ sos_report_dir }}/{{ sos_filename.stdout | trim }}"
           - "Size: {{ sos_file.stat.size }} bytes"
