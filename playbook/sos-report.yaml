@@ -20,35 +20,17 @@
         state: directory
         mode: "0755"
 
-    - name: Generate SOS report on OpenShift node
+    - name: Generate SOS report
       ansible.builtin.command:
         cmd: >
-          oc debug node/{{ node_name.stdout }} --
-          chroot /host
+          oc debug node/{{ node_name.stdout }}
+          --image=registry.redhat.io/rhel9/support-tools
+          -- chroot /host
           sos report
           --batch
       register: sos_report
       changed_when: true
 
-    - name: Find generated SOS report
-      ansible.builtin.shell:
-        cmd: >
-          oc debug node/{{ node_name.stdout }} --
-          chroot /host
-          find /var/tmp -maxdepth 1 -type f -name 'sosreport-*'
-      register: sos_files
-      changed_when: false
-
-    - name: Copy SOS report from node to bastion
-      ansible.builtin.shell:
-        cmd: |
-          oc debug node/{{ node_name.stdout }} -- \
-            chroot /host \
-            cat "{{ item }}" > "{{ sos_report_dir }}/{{ item | basename }}"
-      loop: "{{ sos_files.stdout_lines }}"
-      when: sos_files.stdout_lines | length > 0
-      changed_when: true
-
-    - name: Display SOS report location
+    - name: Display SOS report result
       ansible.builtin.debug:
-        msg: "SOS report saved on bastion: {{ sos_report_dir }}"
+        var: sos_report.stdout_lines
