@@ -15,3 +15,4 @@
       action:
         run_job_template:
           name: "EDA Prometheus Test"
+          organization: "Default"
