@@ -13,4 +13,5 @@
         event.payload.alerts is defined and
         event.payload.alerts[0].labels.alertname == "EDATestAlert"
       action:
-        debug:
+        run_job_template:
+          name: "EDA Prometheus Test"
