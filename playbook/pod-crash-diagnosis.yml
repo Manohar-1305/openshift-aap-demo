@@ -1,0 +1,79 @@
+---
+- name: Diagnose Kubernetes Pod Crash
+  hosts: all
+  gather_facts: false
+
+  tasks:
+
+    - name: Display alert information
+      ansible.builtin.debug:
+        msg:
+          - "Alert: {{ alert_name | default('unknown') }}"
+          - "Namespace: {{ namespace | default('unknown') }}"
+          - "Pod: {{ pod_name | default('unknown') }}"
+
+    - name: Get pod details
+      ansible.builtin.command:
+        cmd: oc get pod "{{ pod_name }}" -n "{{ namespace }}" -o wide
+      register: pod_details
+      changed_when: false
+      failed_when: false
+
+    - name: Display pod details
+      ansible.builtin.debug:
+        var: pod_details.stdout
+
+    - name: Describe pod
+      ansible.builtin.command:
+        cmd: oc describe pod "{{ pod_name }}" -n "{{ namespace }}"
+      register: pod_description
+      changed_when: false
+      failed_when: false
+
+    - name: Display pod description
+      ansible.builtin.debug:
+        var: pod_description.stdout
+
+    - name: Get current container logs
+      ansible.builtin.command:
+        cmd: oc logs "{{ pod_name }}" -n "{{ namespace }}" --all-containers=true --tail=100
+      register: current_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Display current container logs
+      ansible.builtin.debug:
+        var: current_logs.stdout
+
+    - name: Get previous container logs
+      ansible.builtin.command:
+        cmd: oc logs "{{ pod_name }}" -n "{{ namespace }}" --all-containers=true --previous --tail=100
+      register: previous_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Display previous container logs
+      ansible.builtin.debug:
+        var: previous_logs.stdout
+
+    - name: Get namespace events
+      ansible.builtin.command:
+        cmd: oc get events -n "{{ namespace }}" --sort-by=.lastTimestamp
+      register: namespace_events
+      changed_when: false
+      failed_when: false
+
+    - name: Display namespace events
+      ansible.builtin.debug:
+        var: namespace_events.stdout
+
+    - name: Get pod YAML
+      ansible.builtin.command:
+        cmd: oc get pod "{{ pod_name }}" -n "{{ namespace }}" -o yaml
+      register: pod_yaml
+      changed_when: false
+      failed_when: false
+
+    - name: Display pod YAML
+      ansible.builtin.debug:
+        var: pod_yaml.stdout
