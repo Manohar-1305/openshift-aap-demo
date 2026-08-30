@@ -6,17 +6,14 @@
 
   tasks:
 
-    - name: Get crashing pods
+    - name: Get crashing pod
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: aap
-      register: pods
+        name: "{{ pod }}"
+      register: crashing_pod
 
-    - name: Display crashing pods
+    - name: Display crashing pod
       ansible.builtin.debug:
-        msg: "{{ item.metadata.name }} - {{ item.status.containerStatuses | default([]) | map(attribute='state.waiting.reason') | list }}"
-      loop: "{{ pods.resources }}"
-      when:
-        - item.status.containerStatuses is defined
-        - item.status.containerStatuses | selectattr('state.waiting.reason', 'defined') | selectattr('state.waiting.reason', 'equalto', 'CrashLoopBackOff') | list | length > 0
+        msg: "CRASHING PODS : {{ pod }}"
