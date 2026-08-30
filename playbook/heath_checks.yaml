@@ -1,15 +1,12 @@
 ---
 - name: Diagnose Crashing Pod
-  hosts: localhost
-  connection: local
+  hosts: sno.manohar.in
   gather_facts: false
 
   tasks:
     - name: Get crashing pod information
       ansible.builtin.command:
         cmd: oc get pods -A -o wide
-      environment:
-        KUBECONFIG: /runner/project/kubeconfig
       register: pod_status
       changed_when: false
 
