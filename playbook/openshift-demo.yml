@@ -15,13 +15,7 @@
 
     - name: Display crashing pods
       ansible.builtin.debug:
-        msg: >-
-          Crashing Pod: {{ item.metadata.name }}
-          | Namespace: {{ item.metadata.namespace }}
-          | Container: {{ item.status.containerStatuses
-          | selectattr('state.waiting.reason', 'defined')
-          | selectattr('state.waiting.reason', 'equalto', 'CrashLoopBackOff')
-          | map(attribute='name') | list | join(', ') }}
+        msg: "{{ item.metadata.name }}"
       loop: "{{ pods.resources }}"
       when:
         - item.status.containerStatuses is defined
