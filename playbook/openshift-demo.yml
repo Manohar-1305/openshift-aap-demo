@@ -3,17 +3,18 @@
   hosts: localhost
   connection: local
   gather_facts: false
-
   tasks:
 
-    - name: Get crashing pod
+    - name: Check OpenShift authentication
       kubernetes.core.k8s_info:
         api_version: v1
-        kind: Pod
-        namespace: aap
-        name: "{{ pod }}"
-      register: crashing_pod
+        kind: Namespace
+      register: namespaces
 
-    - name: Display crashing pod
+    - name: Display authentication result
       ansible.builtin.debug:
-        msg: "CRASHING PODS : {{ pod }}"
+        msg: "Successfully connected to OpenShift"
+
+    - name: Display namespaces
+      ansible.builtin.debug:
+        msg: "{{ namespaces.resources | map(attribute='metadata.name') | list }}"
