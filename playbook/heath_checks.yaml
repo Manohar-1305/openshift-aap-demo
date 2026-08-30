@@ -1,12 +1,12 @@
 ---
 - name: Diagnose Crashing Pod
-  hosts: localhost
+  hosts: all
   gather_facts: false
 
   tasks:
     - name: Get crashing pod information
       ansible.builtin.command:
-        cmd: oc get pods -A --field-selector=status.phase=Running -o wide
+        cmd: oc get pods -A -o wide
       register: pod_status
       changed_when: false
 
