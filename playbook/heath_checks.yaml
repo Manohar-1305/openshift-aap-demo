@@ -10,12 +10,12 @@
         api_version: v1
         kind: Pod
         namespace: aap
-        kubeconfig: /root/.kube/config
       register: pods
 
     - name: Display crashing pods
       ansible.builtin.debug:
-        msg: "{{ item.metadata.name }}"
+        msg: "{{ item.metadata.name }} - {{ item.status.containerStatuses | default([]) | map(attribute='state.waiting.reason') | list }}"
       loop: "{{ pods.resources }}"
       when:
         - item.status.containerStatuses is defined
+        - item.status.containerStatuses | selectattr('state.waiting.reason', 'defined') | selectattr('state.waiting.reason', 'equalto', 'CrashLoopBackOff') | list | length > 0
