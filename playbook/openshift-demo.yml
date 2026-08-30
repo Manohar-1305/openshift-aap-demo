@@ -4,19 +4,12 @@
   connection: local
   gather_facts: false
 
-  vars:
-    openshift_api: "https://api.sno.manohar.in:6443"
-    openshift_token: "{{ lookup('ansible.builtin.env', 'OPENSHIFT_TOKEN') }}"
-
   tasks:
 
     - name: Check OpenShift authentication
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
-        host: "{{ openshift_api }}"
-        api_key: "{{ openshift_token }}"
-        validate_certs: false
       register: namespaces
 
     - name: Display authentication result
