@@ -5,14 +5,12 @@
   gather_facts: false
 
   tasks:
+
     - name: Get crashing pods
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: aap
-        host: "{{ openshift_api_url }}"
-        api_key: "{{ openshift_api_token }}"
-        validate_certs: false
       register: pods
 
     - name: Display crashing pods
