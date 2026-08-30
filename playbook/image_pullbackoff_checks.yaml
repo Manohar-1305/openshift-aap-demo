@@ -1,0 +1,28 @@
+---
+- name: Diagnose Pod Error
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+
+    - name: Get pods
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: aap
+      register: pods
+      no_log: true
+
+    - name: Display ImagePullBackOff pods
+      ansible.builtin.debug:
+        msg: "IMAGE PULL ERROR : {{ item.metadata.name }}"
+      loop: "{{ pods.resources }}"
+      loop_control:
+        label: ""
+      when:
+        - item.status.containerStatuses is defined
+        - item.status.containerStatuses
+          | selectattr('state.waiting.reason', 'defined')
+          | selectattr('state.waiting.reason', 'equalto', 'ImagePullBackOff')
+          | list | length > 0
