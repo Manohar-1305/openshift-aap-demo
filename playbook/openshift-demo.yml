@@ -11,8 +11,17 @@
         api_version: v1
         kind: Pod
         namespace: aap
+        field_selectors:
+          - status.phase!=Running
+
       register: pods
 
     - name: Display crashing pods
       ansible.builtin.debug:
-        msg: "{{ pods.resources | selectattr('status.containerStatuses', 'defined') | selectattr('status.containerStatuses', 'selectattr', 'state.waiting.reason') }}"
+        msg: "CRASHING PODS : {{ item.metadata.name }}"
+      loop: "{{ pods.resources }}"
+      loop_control:
+        label: ""
+      when:
+        - item.status.containerStatuses is defined
+        - item.status.containerStatuses | selectattr('state.waiting.reason', 'defined') | selectattr('state.waiting.reason', 'equalto', 'CrashLoopBackOff') | list | length > 0
