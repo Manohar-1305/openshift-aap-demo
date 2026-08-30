@@ -5,16 +5,13 @@
   gather_facts: false
 
   tasks:
-
     - name: Get crashing pods
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: aap
-        field_selectors:
-          - status.phase!=Running
-
       register: pods
+      no_log: true
 
     - name: Display crashing pods
       ansible.builtin.debug:
