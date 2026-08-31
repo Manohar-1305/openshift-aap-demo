@@ -10,10 +10,10 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
-        namespace: "{{ ansible_eda.event.alert.labels.namespace }}"
-        name: "{{ ansible_eda.event.alert.labels.pod }}"
+        namespace: "{{ namespace }}"
+        name: "{{ pod_name }}"
       register: image_error_pod
 
     - name: Display image pull error pod
       ansible.builtin.debug:
-        msg: "IMAGE PULL ERROR : {{ ansible_eda.event.alert.labels.pod }}"
+        msg: "IMAGE PULL ERROR : {{ pod_name }}"
