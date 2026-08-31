@@ -17,4 +17,4 @@
 
     - name: Display image pull error pod
       ansible.builtin.debug:
-        msg: "IMAGE PULL ERROR : {{ image_error_pod.resources[0].metadata.name }}"
+        msg: "IMAGE PULL ERROR : image-error-test"
