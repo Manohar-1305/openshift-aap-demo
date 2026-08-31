@@ -1,0 +1,156 @@
+---
+- name: Diagnose KubeDaemonSetMisscheduled
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    NS: "{{ namespace }}"
+    DAEMONSET: "{{ daemonset }}"
+
+  tasks:
+
+    - name: Check DaemonSet exists
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" get ds "{{ DAEMONSET }}"
+      register: ds_check
+      changed_when: false
+
+    - name: Check numberMisscheduled
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" get ds "{{ DAEMONSET }}" -o jsonpath='{.status.numberMisscheduled}'
+      register: number_misscheduled
+      changed_when: false
+
+    - name: Report STALE_ALERT
+      ansible.builtin.debug:
+        msg: "STALE_ALERT"
+      when:
+        - number_misscheduled.stdout | int == 0
+
+    - name: Get DaemonSet pods
+      ansible.builtin.shell:
+        cmd: >
+          oc -n "{{ NS }}" get pod -l
+          $(oc -n "{{ NS }}" get ds "{{ DAEMONSET }}"
+          -o jsonpath='{.spec.selector.matchLabels}' |
+          jq -r 'to_entries|map("\(.key)=\(.value)")|join(",")')
+      register: daemonset_pods
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+
+    - name: Find terminating DaemonSet pods
+      ansible.builtin.shell:
+        cmd: >
+          oc -n "{{ NS }}" get pod -l
+          $(oc -n "{{ NS }}" get ds "{{ DAEMONSET }}"
+          -o jsonpath='{.spec.selector.matchLabels}' |
+          jq -r 'to_entries|map("\(.key)=\(.value)")|join(",")')
+          -o jsonpath='{range .items[?(@.metadata.deletionTimestamp)]}{.metadata.name}{"\n"}{end}'
+      register: terminating_pods
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+
+    - name: Check terminating pod details
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" describe pod "{{ item }}"
+      loop: "{{ terminating_pods.stdout_lines }}"
+      register: terminating_pod_details
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length > 0
+
+    - name: Check terminating pod finalizers
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" get pod "{{ item }}" -o jsonpath='{.metadata.finalizers}{"\n"}'
+      loop: "{{ terminating_pods.stdout_lines }}"
+      register: terminating_pod_finalizers
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length > 0
+
+    - name: Report STUCK_TERMINATING_POD
+      ansible.builtin.debug:
+        msg: "STUCK_TERMINATING_POD"
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length > 0
+
+    - name: Get DaemonSet nodeSelector
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" get ds "{{ DAEMONSET }}" -o jsonpath='{.spec.template.spec.nodeSelector}{"\n"}'
+      register: node_selector
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length == 0
+
+    - name: Get DaemonSet affinity
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" get ds "{{ DAEMONSET }}" -o jsonpath='{.spec.template.spec.affinity}{"\n"}'
+      register: affinity
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length == 0
+
+    - name: Get DaemonSet tolerations
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" get ds "{{ DAEMONSET }}" -o jsonpath='{.spec.template.spec.tolerations}{"\n"}'
+      register: tolerations
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length == 0
+
+    - name: Get nodes
+      ansible.builtin.command:
+        cmd: oc get nodes -o custom-columns=NAME:.metadata.name,SCHEDULABLE:.spec.unschedulable,LABELS:.metadata.labels
+      register: nodes
+      changed_when: false
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length == 0
+
+    - name: Display scheduling information
+      ansible.builtin.debug:
+        msg:
+          - "nodeSelector: {{ node_selector.stdout }}"
+          - "affinity: {{ affinity.stdout }}"
+          - "tolerations: {{ tolerations.stdout }}"
+          - "nodes: {{ nodes.stdout }}"
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length == 0
+
+    - name: Get DaemonSet description
+      ansible.builtin.command:
+        cmd: oc -n "{{ NS }}" describe ds "{{ DAEMONSET }}"
+      register: daemonset_describe
+      changed_when: false
+
+    - name: Get DaemonSet events
+      ansible.builtin.shell:
+        cmd: >
+          oc -n "{{ NS }}" get events
+          --field-selector involvedObject.name="{{ DAEMONSET }}"
+          --sort-by='.lastTimestamp'
+      register: daemonset_events
+      changed_when: false
+
+    - name: Display UNKNOWN diagnosis information
+      ansible.builtin.debug:
+        msg:
+          - "DaemonSet spec:"
+          - "{{ daemonset_check.stdout }}"
+          - "DaemonSet description:"
+          - "{{ daemonset_describe.stdout }}"
+          - "DaemonSet events:"
+          - "{{ daemonset_events.stdout }}"
+          - "Diagnosis: UNKNOWN"
+      when:
+        - number_misscheduled.stdout | int > 0
+        - terminating_pods.stdout_lines | length == 0
