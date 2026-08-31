@@ -7,14 +7,17 @@
 
   tasks:
 
-    - name: Get image pull error pod
+    - name: Get image pull error pods
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: aap
-        name: image-error-test
-      register: image_error_pod
+      register: pods
 
-    - name: Display image pull error pod
+    - name: Display image pull error pods
       ansible.builtin.debug:
-        msg: "IMAGE PULL ERROR : image-error-test"
+        msg: "IMAGE PULL ERROR : {{ item.metadata.name }}"
+      loop: "{{ pods.resources }}"
+      when:
+        - item.status.containerStatuses is defined
+        - item.status.containerStatuses | selectattr('state.waiting.reason', 'defined') | selectattr('state.waiting.reason', 'in', ['ErrImagePull', 'ImagePullBackOff']) | list | length > 0
