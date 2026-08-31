@@ -5,6 +5,15 @@
   gather_facts: false
 
   tasks:
-    - name: Show received variables
+
+    - name: Get image pull error pod
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        name: "{{ pod_name }}"
+      register: image_error_pod
+
+    - name: Display image pull error pod
       ansible.builtin.debug:
-        var: vars
+        msg: "IMAGE PULL ERROR : {{ image_error_pod.resources[0].metadata.name }}"
