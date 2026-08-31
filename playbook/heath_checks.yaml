@@ -16,4 +16,4 @@
 
     - name: Display crashing pod
       ansible.builtin.debug:
-        msg: "CRASHING PODS : {{ crashing_pod.resources[0].metadata.name }}"
+        msg: "CRASHING POD : {{ crashing_pod.resources[0].metadata.name }}"
