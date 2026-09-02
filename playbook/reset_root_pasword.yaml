@@ -1,0 +1,31 @@
+---
+- name: VM Root Password Reset
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    root_password: "{{ vault_root_password }}"
+
+  tasks:
+
+    - name: Remount root filesystem as read-write
+      ansible.builtin.command:
+        cmd: mount -o remount,rw /sysroot
+
+    - name: Reset root password
+      ansible.builtin.shell:
+        cmd: |
+          chroot /sysroot /bin/bash -c \
+          "echo 'root:{{ root_password }}' | chpasswd"
+      no_log: true
+
+    - name: Enable SELinux autorelabel
+      ansible.builtin.file:
+        path: /sysroot/.autorelabel
+        state: touch
+        mode: '0600'
+
+    - name: Reboot VM
+      ansible.builtin.command:
+        cmd: chroot /sysroot /sbin/reboot
