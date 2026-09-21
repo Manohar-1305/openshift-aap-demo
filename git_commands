@@ -1,0 +1,62 @@
+
+Step 1:
+git clone https://github.com/Manohar-1305/gitopops-argocd.git
+
+step 2:
+cd gitopops-argocd
+
+step 3:
+git remote add upstream https://github.com/Mark-1305/gitopops-argocd.git
+
+This adds the original repository as upstream.
+
+origin   → your fork (Manohar-1305) → you push here
+upstream → original repo (Mark-1305) → you don't push here
+
+step 4: 
+git remote -v
+
+This verifies that:
+origin   → your fork
+upstream → original repository
+
+Step 5:
+git checkout main
+This switches you to the main branch of your local clone.
+
+step 6:
+git checkout -b my-branch
+This creates your working branch where you'll make the changes.
+
+git status
+
+echo "This is HSBC Test" > test_file.txt
+
+
+Step 7:
+git status
+
+
+Step 8:
+git add .
+
+step 9:
+git commit -m "Add new changes"
+
+git push -u origin my-branch
+
+git config --show-origin --get-all credential.helper
+
+printf "protocol=https\nhost=github.com\n\n" | git credential-manager-core erase
+
+git push -u origin my-branch
+
+git log -1 --oneline
+acd2129 (HEAD -> my-branch, origin/my-branch) Add new changes
+
+Your my-branch commit acd2129 has been successfully pushed to your fork.
+
+git show acd2129
+
+type test-file.txt
+code test-file.txt
